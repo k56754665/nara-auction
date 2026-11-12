@@ -9,8 +9,8 @@ services:
     buildCommand: npm ci --include=dev && npm test && npm run build
     startCommand: npm start
     healthCheckPath: /health
-    # 경기 중 코드 push로 서버가 재시작되지 않도록 수동 배포합니다.
-    autoDeployTrigger: off
+    # GitHub main에 push하면 테스트·빌드 성공 후 자동으로 반영합니다.
+    autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
         value: production
