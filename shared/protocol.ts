@@ -2,6 +2,7 @@ export interface Session { token: string; roomCode: string; playerId: string }
 export interface RoomExit { roomCode: string; reason: 'hostClosed' | 'left' }
 export interface PlayerView {
   id: string; seat: number; nickname: string; connected: boolean; ready: boolean;
+  isBot: boolean;
   funds: number; deliveries: number;
   priceSubmitted: boolean; bidSubmitted: boolean; eligible: boolean | null;
 }

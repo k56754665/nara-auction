@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { Game, type GameOptions } from '../server/game.js';
 import type { Action, Command, RoomView, Session } from '../shared/protocol.js';
 
-export function fixture(options: GameOptions = {}) {
+export function fixture(options: GameOptions = {}, humanCount = 4) {
   let time = 1_000; let counter = 0;
   const views = new Map<string, RoomView>();
   const game = new Game((id, s) => views.set(id, structuredClone(s)), () => {}, { now: () => time, autoTick: false, shuffle: ids => ids, ...options });
-  const ids = ['a','b','c','d']; const sessions: Session[] = [];
+  const ids = ['a','b','c','d'].slice(0,humanCount); const sessions: Session[] = [];
   for (const [i, id] of ids.entries()) {
     const reply = game.command(id, i === 0 ? { type: 'create', nickname: 'A' } : { type: 'join', nickname: ['A','B','C','D'][i], code: sessions[0].roomCode });
     assert(reply.ok && reply.session); sessions.push(reply.session);
@@ -19,5 +19,6 @@ export function fixture(options: GameOptions = {}) {
   const continueAll = () => ids.forEach(id => act(id, { kind: 'continue' }));
   const start = () => { assert(game.command('a', { type: 'start' }).ok); continueAll(); expire(); assert.equal(state().phase, 'price'); };
   const prices = (values: (number | null)[]) => ids.forEach((id,i) => act(id, { kind: 'price', amount: values[i] }));
-  return { game, ids, sessions, state, request, act, expire, continueAll, start, prices, setTime: (v: number) => { time = v; } };
+  return { game, ids, sessions, state, request, act, expire, continueAll, start, prices,
+    advance: (ms = 1) => { time += ms; game.tick(); }, setTime: (v: number) => { time = v; } };
 }

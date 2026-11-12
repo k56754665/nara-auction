@@ -4,3 +4,4 @@ export const DURATIONS = {
   rebid: 15_000, reviewChoice: 10_000, reviewAnswer: 20_000, result: 15_000,
 };
 export type Durations = typeof DURATIONS;
+export const BOT_CONFIG = { actionDelayMs: 900, priceErrorPercent: 14, rebidChance: 0.65, challengeChance: 0.8, correctChoiceChance: 0.75 };

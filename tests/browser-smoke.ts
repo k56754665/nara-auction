@@ -32,7 +32,7 @@ try {
     await page.getByRole('button',{name:'준비 완료',exact:true}).click();
   }
   await pages[0].screenshot({path:'tmp/browser/lobby.png',fullPage:true});
-  await pages[0].getByRole('button',{name:'4인 경기 시작',exact:true}).click(); await phase('물품 카탈로그');
+  await pages[0].getByRole('button',{name:'게임 시작',exact:true}).click(); await phase('물품 카탈로그');
   assert.equal(await pages[0].locator('.catalog article').count(),30);
   await pages[0].screenshot({path:'tmp/browser/catalog.png',fullPage:true});
   for (const p of pages) await p.getByRole('button',{name:'열람 완료',exact:true}).click();

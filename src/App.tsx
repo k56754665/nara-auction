@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { command, forgetSession, leaveRoom, submit, useConnection } from './connection';
-import type { Phase, RoomView, RoundResult } from '../shared/protocol';
+import type { Phase, PlayerView, RoomView, RoundResult } from '../shared/protocol';
 
 export const money = (v: number) => `${v.toLocaleString('ko-KR')}원`;
 const titles: Record<Phase, string> = { lobby: '대기실', catalog: '물품 카탈로그', announcement: '입찰 공고', price: '가격 퀴즈', firstBid: '첫 입찰', rebid: '공개 재입찰', reviewChoice: '규격 심사 선택', reviewAnswer: '규격 퀴즈', result: '라운드 결과', finished: '최종 순위' };
 const steps: Phase[] = ['announcement','price','firstBid','rebid','reviewAnswer','result'];
 const nameOf = (s: RoomView, id: string | null) => s.players.find(p => p.id === id)?.nickname ?? '없음';
+function playerStatus(p: PlayerView, s: RoomView) {
+  if (!p.connected) return '연결 끊김';
+  if (s.phase === 'lobby') return p.ready ? '준비 완료' : '준비 중';
+  if (s.phase === 'price') return p.priceSubmitted ? '제출 완료' : '답안 작성 중';
+  if (s.phase === 'firstBid') return !p.eligible ? '자격 없음' : p.bidSubmitted ? '입찰 완료' : '입찰 중';
+  if (s.activeId === p.id) return '현재 차례';
+  return p.isBot ? '자동 플레이' : '연결됨';
+}
 
 function Countdown({ state }: { state: RoomView }) {
   const [remaining, setRemaining] = useState(0);
@@ -56,7 +64,7 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
   const next = (label: string) => <><button disabled={disabled || s.me.acknowledged} onClick={() => act({ kind: 'continue' })}>{s.me.acknowledged ? '확인 완료 · 다른 업체 대기 중' : label}</button><p className="muted">전원이 확인하거나 제한시간이 끝나면 자동으로 진행합니다.</p></>;
   if (s.phase === 'lobby') return <><small>GET READY</small><h2>모두 준비되면 출발합니다</h2><p>초기 운영자금 3,000만 원으로 시작해 10라운드 동안 계약에 도전합니다.<br />가격 퀴즈 → 입찰 → 규격 심사를 통과하면 납품 수익을 얻습니다.</p>
     <div className="actions"><button disabled={disabled} onClick={() => void command({ type: 'ready', ready: !me.ready })}>{me.ready ? '준비 취소' : '준비 완료'}</button>
-      {s.hostId === myId && <button className="dark" disabled={disabled || s.players.length !== 4 || s.players.some(p => !p.ready || !p.connected)} onClick={() => void command({ type: 'start' })}>4인 경기 시작</button>}</div><p className="muted">방 코드를 나머지 3명에게 전달하세요. 방장도 준비 완료가 필요합니다.</p></>;
+      {s.hostId === myId && <button className="dark" disabled={disabled || s.players.some(p => !p.ready || !p.connected)} onClick={() => void command({ type: 'start' })}>게임 시작</button>}</div><p className="muted">사람 {s.players.length}명 + 봇 {4-s.players.length}명으로 진행합니다. 참가한 사람 모두 준비하면 방장이 시작할 수 있습니다. 빈 자리는 시작할 때 봇으로 채웁니다.</p></>;
   if (s.phase === 'catalog') return <><small>STUDY / 30 ITEMS</small><h2>단가와 규격을 기억하세요</h2><p>최대 15분 동안 열람할 수 있습니다. 이 중 10종이 출제됩니다.</p>
     <label>물품 검색<input value={query} onChange={e => setQuery(e.target.value)} placeholder="물품명을 입력하세요" /></label>
     <div className="catalog">{s.catalog.filter(i => i.name.includes(query)).map(i => <article key={i.id}><small>{i.id.toUpperCase()}</small><h3>{i.name}</h3><strong>{money(i.unitPrice)} / {i.unit}</strong><p>{i.specs}</p><small>{i.description}</small></article>)}</div>{next('열람 완료')}</>;
@@ -92,19 +100,20 @@ export function App() {
   const [nickname, setNickname] = useState(''); const [code, setCode] = useState('');
   const [exitRoomCode, setExitRoomCode] = useState('');
   const me = state?.players.find(p => p.id === session?.playerId);
+  const humanCount = state?.players.filter(p => !p.isBot).length ?? 0;
   const active = state?.activeId === me?.id && !!me;
-  return <main><header><div><small>NARA AUCTION / 4 PLAYER GAME</small><h1>나라입찰<span>가격을 읽고, 계약을 따내다.</span></h1></div><span className={`badge ${connected ? 'online' : ''}`}>{connected ? '● 서버 연결됨' : '○ 연결 복구 중'}</span></header>
+  return <main><header><div><small>NARA AUCTION / 1~4 PLAYERS + BOTS</small><h1>나라입찰<span>가격을 읽고, 계약을 따내다.</span></h1></div><span className={`badge ${connected ? 'online' : ''}`}>{connected ? '● 서버 연결됨' : '○ 연결 복구 중'}</span></header>
     {error && <p className="error" role="alert">{error}</p>}
     {notice && <p className="notice-message" role="status">{notice}</p>}
     {!connected && state && <p className="error">연결을 복구하고 있습니다. 서버의 제한시간은 계속 흐릅니다.</p>}
-    {!state || !me ? <section className="card entry"><small>4인 실시간 입찰 경쟁</small><h2>당신의 업체를 시작하세요</h2><p>물품 가격을 맞히고, 입찰하고, 규격을 확인하세요.<br />10번의 계약 기회, 최고의 운영자금에 도전합니다.</p>
+    {!state || !me ? <section className="card entry"><small>1~4인 플레이 · 빈자리는 봇으로</small><h2>당신의 업체를 시작하세요</h2><p>혼자서도, 친구와 함께해도 시작할 수 있습니다.<br />가격 퀴즈와 입찰로 10번의 계약 기회에 도전하세요.</p>
       <label>닉네임<input value={nickname} maxLength={16} onChange={e => setNickname(e.target.value)} placeholder="예: 나라상사" /></label><button disabled={!connected || !!session || !nickname.trim()} onClick={() => void command({ type: 'create', nickname })}>새 방 만들기</button>
       <div className="divider">초대받은 방이 있나요?</div><label>방 코드<input value={code} maxLength={6} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="6자리 코드" /></label><button className="secondary" disabled={!connected || !!session || !nickname.trim() || code.length !== 6} onClick={() => void command({ type: 'join', nickname, code })}>코드로 참가</button>
       {session && <button className="text" onClick={forgetSession}>복원 중단하고 새로 참가</button>}</section> : <>
-      <section className="room-bar"><div><small>ROOM CODE · 친구에게 공유하세요</small><strong>{state.code}</strong></div><div className="room-stage"><small>{state.roundNumber ? `ROUND ${state.roundNumber} / ${state.totalRounds}` : `${state.players.length} / 4 PLAYERS`}</small><strong>{titles[state.phase]}</strong></div><Countdown state={state} /></section>
+      <section className="room-bar"><div><small>ROOM CODE · 친구에게 공유하세요</small><strong>{state.code}</strong></div><div className="room-stage"><small>{state.roundNumber ? `ROUND ${state.roundNumber} / ${state.totalRounds}` : `사람 ${humanCount}명 · 봇 ${4-humanCount}명${state.phase==='lobby'?' 예정':''}`}</small><strong>{titles[state.phase]}</strong></div><Countdown state={state} /></section>
       <div className="room-actions"><button className="secondary" disabled={!connected || pending} onClick={() => setExitRoomCode(state.code)}>{state.hostId === me.id ? '방 닫고 메인으로' : '메인으로 나가기'}</button></div>
       {exitRoomCode === state.code && <ExitDialog host={state.hostId === me.id} inGame={state.phase !== 'lobby'} disabled={!connected || pending} onCancel={() => setExitRoomCode('')} onConfirm={() => { void leaveRoom().then(() => setExitRoomCode('')); }} />}
-      <div className="players">{state.players.map(p => <article className={`card ${p.id === me.id ? 'mine' : ''} ${p.id === state.activeId ? 'active-player' : ''}`} key={p.id}><small>SEAT {p.seat} {p.id === me.id ? '· 나' : ''} {p.id === state.hostId ? '· 방장' : ''}</small><h3>{p.nickname}</h3><p>{money(p.funds)}</p><div className="player-bottom"><span>납품 {p.deliveries}건</span><span>{!p.connected ? '연결 끊김' : state.phase === 'lobby' ? p.ready ? '준비 완료' : '준비 중' : state.phase === 'price' ? p.priceSubmitted ? '제출 완료' : '답안 작성 중' : state.phase === 'firstBid' ? !p.eligible ? '자격 없음' : p.bidSubmitted ? '입찰 완료' : '입찰 중' : state.activeId === p.id ? '현재 차례' : '연결됨'}</span></div></article>)}{[1,2,3,4].filter(seat => !state.players.some(p => p.seat === seat)).map(seat => <article className="card empty" key={`empty-${seat}`}><small>SEAT {seat}</small><h3>참가자 대기 중</h3><p>방 코드로 참가하세요</p></article>)}</div>
+      <div className="players">{state.players.map(p => <article className={`card ${p.isBot ? 'bot-player' : ''} ${p.id === me.id ? 'mine' : ''} ${p.id === state.activeId ? 'active-player' : ''}`} key={p.id}><small>SEAT {p.seat} {p.isBot ? '· 봇' : ''} {p.id === me.id ? '· 나' : ''} {p.id === state.hostId ? '· 방장' : ''}</small><h3>{p.nickname}</h3><p>{money(p.funds)}</p><div className="player-bottom"><span>납품 {p.deliveries}건</span><span>{playerStatus(p,state)}</span></div></article>)}{[1,2,3,4].filter(seat => !state.players.some(p => p.seat === seat)).map(seat => <article className="card empty" key={`empty-${seat}`}><small>SEAT {seat}</small><h3>빈 자리 · 봇 예정</h3><p>친구가 참가하거나 시작할 때 봇으로 채웁니다.</p></article>)}</div>
       {state.roundNumber > 0 && state.phase !== 'finished' && <nav className="steps">{steps.map((p,i) => <span className={state.phase === p || state.phase === 'reviewChoice' && p === 'reviewAnswer' ? 'current' : ''} key={p}>{i+1}. {titles[p]}</span>)}</nav>}
       <div className="game-layout"><section className={`card stage ${active ? 'my-turn' : ''}`} aria-live="polite">{active && <div className="turn-label">지금 내 차례입니다</div>}{pending && <p className="muted">서버 확인 중…</p>}<Stage key={state.phaseId} state={state} myId={me.id} disabled={!connected || pending} onExit={() => setExitRoomCode(state.code)} /></section>
         <aside><section className="card"><small>MY COMPANY</small><h3>{me.nickname}</h3><p className="funds">{money(me.funds)}</p><p>누적 납품 <strong>{me.deliveries}건</strong></p><hr /><small>게임 규칙</small><p className="muted">가격 오차 ±{state.rules.tolerancePercent}% 이내<br />입찰 단위 {money(state.rules.bidStep)}<br />심사 실패 비용 예산의 {state.rules.failurePercent}%<br />납품 1건 이상이어야 우승 가능</p></section>

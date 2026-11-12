@@ -1,6 +1,7 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { Action, CatalogItem, Command, Phase, PlayerView, Reply, RoomExit, RoomView, RoundResult, ReviewResult, Session } from '../shared/protocol.js';
-import { DURATIONS, RULES, type Durations } from './config.js';
+import { BOT_CONFIG, DURATIONS, RULES, type Durations } from './config.js';
+import { chooseBotAction } from './bots.js';
 import { CATALOG, TENDERS, validateContent, type Tender } from './data.js';
 import { bidError, failureFee, qualifies, standings } from './rules.js';
 
@@ -19,10 +20,12 @@ interface Room {
   code: string; hostId: string; phase: Phase; phaseId: string; deadline: number | null;
   players: Player[]; roundIndex: number; round: Round | null; history: RoundResult[];
   acknowledged: Set<string>; activeId: string | null;
+  botActionAt: number | null;
 }
 export interface GameOptions {
   now?: () => number; autoTick?: boolean; durations?: Partial<Durations>;
   catalog?: CatalogItem[]; tenders?: Tender[]; shuffle?: (ids: string[]) => string[];
+  botDelayMs?: number; botRandom?: () => number;
 }
 function shuffled(ids: string[]) {
   const a = [...ids];
@@ -35,11 +38,14 @@ export class Game {
   readonly durations: Durations;
   readonly catalog: CatalogItem[];
   readonly tenders: Tender[];
+  private readonly botDelayMs: number;
   private timer?: ReturnType<typeof setInterval>;
   constructor(readonly send: (socketId: string, state: RoomView) => void,
     readonly replace: (socketId: string) => void = () => {}, private options: GameOptions = {},
     readonly exited: (socketId: string, event: RoomExit) => void = () => {}) {
     this.now = options.now ?? Date.now;
+    this.botDelayMs = options.botDelayMs ?? BOT_CONFIG.actionDelayMs;
+    if (!Number.isSafeInteger(this.botDelayMs) || this.botDelayMs < 0) throw new Error('봇 대기 시간은 0 이상의 정수 ms여야 합니다.');
     this.durations = { ...DURATIONS, ...options.durations };
     if (Object.values(this.durations).some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error('단계 시간은 양의 정수 ms여야 합니다.');
     this.catalog = options.catalog ?? CATALOG; this.tenders = options.tenders ?? TENDERS;
@@ -89,7 +95,7 @@ export class Game {
         if (c.type === 'create') {
           let code: string; do { code = randomBytes(3).toString('hex').toUpperCase(); } while (this.rooms.has(code));
           room = { code, hostId: '', phase: 'lobby', phaseId: randomUUID(), deadline: null, players: [],
-            roundIndex: -1, round: null, history: [], acknowledged: new Set(), activeId: null };
+            roundIndex: -1, round: null, history: [], acknowledged: new Set(), activeId: null, botActionAt: null };
           this.rooms.set(code, room);
         } else {
           const found = this.rooms.get(typeof c.code === 'string' ? c.code.trim().toUpperCase() : '');
@@ -98,7 +104,7 @@ export class Game {
           if (room.phase !== 'lobby') throw new Error('이미 시작된 경기입니다.');
           if (room.players.length >= 4) throw new Error('이미 4명이 참가했습니다.');
         }
-        const player: Player = { id: randomUUID(), token: randomBytes(32).toString('hex'), socketId,
+        const player: Player = { id: randomUUID(), token: randomBytes(32).toString('hex'), socketId, isBot: false,
           seat: [1,2,3,4].find(seat => !room.players.some(p => p.seat === seat))!, nickname, connected: true, ready: false,
           funds: RULES.initialFunds, deliveries: 0, receipts: new Map() };
         room.players.push(player); room.players.sort((a,b) => a.seat - b.seat);
@@ -109,7 +115,7 @@ export class Game {
       }
       if (c.type === 'resume') {
         if (this.find(socketId)) throw new Error('이미 연결된 참가자입니다.');
-        const room = this.rooms.get(c.code); const player = room?.players.find(p => p.token === c.token);
+        const room = this.rooms.get(c.code); const player = room?.players.find(p => !p.isBot && p.token === c.token);
         if (!room || !player) return { ok: false, code: 'SESSION_NOT_FOUND', error: '복원할 경기가 없습니다. 서버가 재시작되었을 수 있습니다.' };
         const oldSocket = player.socketId; player.socketId = socketId; player.connected = true;
         if (oldSocket && oldSocket !== socketId) this.replace(oldSocket);
@@ -150,7 +156,13 @@ export class Game {
           if (typeof c.ready !== 'boolean') throw new Error('잘못된 준비 요청입니다.'); player.ready = c.ready;
         } else if (c.type === 'start') {
           if (player.id !== room.hostId) throw new Error('방장만 시작할 수 있습니다.');
-          if (room.players.length !== 4 || room.players.some(p => !p.ready || !p.connected)) throw new Error('4명이 모두 연결되어 준비해야 합니다.');
+          if (room.players.some(p => !p.ready || !p.connected)) throw new Error('참가한 사람이 모두 연결되어 준비해야 합니다.');
+          for (const seat of [1,2,3,4]) if (!room.players.some(p => p.seat === seat)) {
+            room.players.push({ id: randomUUID(), token: randomBytes(32).toString('hex'), socketId: null,
+              seat, nickname: `입찰봇 ${seat}호`, isBot: true, connected: true, ready: true,
+              funds: RULES.initialFunds, deliveries: 0, receipts: new Map() });
+          }
+          room.players.sort((a,b) => a.seat - b.seat);
           this.enter(room, 'catalog');
         } else throw new Error('알 수 없는 요청입니다.');
       }
@@ -160,6 +172,7 @@ export class Game {
   private enter(room: Room, phase: Phase) {
     room.phase = phase; room.phaseId = randomUUID(); room.acknowledged.clear();
     room.deadline = phase === 'lobby' || phase === 'finished' ? null : this.now() + this.durations[phase];
+    room.botActionAt = room.deadline !== null && room.players.some(p => p.isBot) ? this.now() + this.botDelayMs : null;
     if (!['rebid','reviewChoice','reviewAnswer'].includes(phase)) room.activeId = null;
   }
   private beginRound(room: Room) {
@@ -284,7 +297,18 @@ export class Game {
     }
     this.publish(room);
   }
-  tick() { for (const room of this.rooms.values()) this.expire(room); }
+  private runBots(room: Room) {
+    if (room.botActionAt === null || this.now() < room.botActionAt) return;
+    const phaseId = room.phaseId;
+    room.botActionAt = null;
+    for (const bot of room.players.filter(p => p.isBot)) {
+      if (room.phaseId !== phaseId) break;
+      const action = chooseBotAction(this.view(room, bot), bot.id, this.catalog, this.options.botRandom ?? Math.random);
+      if (action) this.act(room, bot, action);
+    }
+    this.publish(room);
+  }
+  tick() { for (const room of this.rooms.values()) { this.expire(room); this.runBots(room); } }
   disconnect(socketId: string) {
     const found = this.find(socketId); if (!found) return;
     found.player.socketId = null; found.player.connected = false; this.publish(found.room);
