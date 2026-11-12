@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { Server } from 'socket.io';
 import type { ClientEvents, ServerEvents } from '../shared/protocol.js';
-import { Game } from './game.js';
+import { Game, type GameOptions } from './game.js';
 
-export async function createApp(dev = false) {
+export async function createApp(dev = false, options: GameOptions = {}) {
   let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
   const http = createServer(async (req, res) => {
     if (req.url === '/health') {
@@ -25,7 +25,7 @@ export async function createApp(dev = false) {
   const io = new Server<ClientEvents, ServerEvents>(http, { maxHttpBufferSize: 8_192 });
   const game = new Game((id, state) => io.to(id).emit('state', state), id => {
     io.to(id).emit('replaced'); io.sockets.sockets.get(id)?.disconnect(true);
-  });
+  }, options);
   io.on('connection', socket => {
     socket.on('command', (command, ack) => {
       const reply = game.command(socket.id, command);

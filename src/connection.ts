@@ -1,14 +1,14 @@
 import { useSyncExternalStore } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import type { ClientEvents, Command, Reply, RoomView, ServerEvents, Session } from '../shared/protocol';
+import type { Action, ClientEvents, Command, Reply, RoomView, ServerEvents, Session } from '../shared/protocol';
 
 const key = 'nara-session-v1';
 function readSession(): Session | null {
   try { return JSON.parse(sessionStorage.getItem(key) ?? 'null'); } catch { return null; }
 }
 let session = readSession();
-let snapshot: { state: RoomView | null; session: Session | null; connected: boolean; error: string } = {
-  state: null, session, connected: false, error: '',
+let snapshot: { state: RoomView | null; session: Session | null; connected: boolean; error: string; pending: boolean } = {
+  state: null, session, connected: false, error: '', pending: false,
 };
 const listeners = new Set<() => void>();
 function update(patch: Partial<typeof snapshot>) {
@@ -44,6 +44,14 @@ export async function command(c: Command): Promise<Reply> {
   }
 }
 export function forgetSession() { sessionStorage.removeItem(key); location.reload(); }
+export async function submit(phaseId: string, action: Action) {
+  if (snapshot.pending) return;
+  update({ pending: true });
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try { await command({ type: 'submit', phaseId, requestId, action }); }
+  finally { update({ pending: false }); }
+}
 export function useConnection() {
   return useSyncExternalStore(l => { listeners.add(l); return () => { listeners.delete(l); }; }, () => snapshot);
 }
+if (import.meta.hot) import.meta.hot.dispose(() => { socket.disconnect(); listeners.clear(); });
