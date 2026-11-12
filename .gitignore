@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+dist/
+build-server/
+tmp/
+*.log
+.env
