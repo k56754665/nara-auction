@@ -1,4 +1,5 @@
 export interface Session { token: string; roomCode: string; playerId: string }
+export interface RoomExit { roomCode: string; reason: 'hostClosed' | 'left' }
 export interface PlayerView {
   id: string; seat: number; nickname: string; connected: boolean; ready: boolean;
   funds: number; deliveries: number;
@@ -39,7 +40,9 @@ export type Command =
   | { type: 'resume'; token: string; code: string }
   | { type: 'ready'; ready: boolean }
   | { type: 'start' }
+  | { type: 'closeRoom'; roomCode: string }
+  | { type: 'leave'; roomCode: string }
   | { type: 'submit'; requestId: string; phaseId: string; action: Action };
 export type Reply = { ok: true; session?: Session } | { ok: false; error: string; code?: 'SESSION_NOT_FOUND' | 'TRANSPORT' };
 export interface ClientEvents { command: (command: Command, ack: (reply: Reply) => void) => void }
-export interface ServerEvents { state: (state: RoomView) => void; replaced: () => void }
+export interface ServerEvents { state: (state: RoomView) => void; replaced: () => void; roomExited: (event: RoomExit) => void }

@@ -25,7 +25,7 @@ export async function createApp(dev = false, options: GameOptions = {}) {
   const io = new Server<ClientEvents, ServerEvents>(http, { maxHttpBufferSize: 8_192 });
   const game = new Game((id, state) => io.to(id).emit('state', state), id => {
     io.to(id).emit('replaced'); io.sockets.sockets.get(id)?.disconnect(true);
-  }, options);
+  }, options, (id, event) => io.to(id).emit('roomExited', event));
   io.on('connection', socket => {
     socket.on('command', (command, ack) => {
       const reply = game.command(socket.id, command);

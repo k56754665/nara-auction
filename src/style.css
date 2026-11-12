@@ -51,6 +51,14 @@ hr { border: 0; border-top: 1px solid #e1e8ed; margin: 20px 0; }
 .steps span { font-size: 12px; padding: 7px 12px; color: #57717e; border-radius: 6px; }
 .steps .current { background: #d9e9e4; color: #126c53; font-weight: 750; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.room-actions { display: flex; justify-content: flex-end; margin: -8px 0 18px; }
+.room-actions button { font-size: 12px; padding: 8px 14px; }
+button.danger { background: #a6382b; }
+.exit-dialog { color: #183343; border: 1px solid #d9e3e9; border-radius: 14px; padding: 26px; width: min(440px, calc(100% - 28px)); }
+.exit-dialog::backdrop { background: #102e4280; }
+.exit-dialog h2 { font-size: 22px; }
+.exit-dialog .actions { justify-content: flex-end; margin-top: 24px; }
+.notice-message { color: #125e4b; background: #e1f1e9; border: 1px solid #b3d7c5; padding: 13px 18px; border-radius: 9px; }
 .muted { color: #607a87; font-size: 13px; }
 .error { background: #fff0ec; border: 1px solid #efbdad; color: #922d20; padding: 13px 18px; border-radius: 9px; }
 .catalog { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-height: 500px; overflow-y: auto; margin: 10px 0 22px; padding: 2px; }

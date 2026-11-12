@@ -13,6 +13,7 @@
     "start": "node build-server/server/index.js",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "tsx tests/browser-smoke.ts",
+    "test:browser:exit": "tsx tests/room-exit-browser.ts",
     "test:live": "tsx tests/live-smoke.ts"
   },
   "dependencies": {

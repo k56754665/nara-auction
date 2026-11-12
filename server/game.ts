@@ -1,5 +1,5 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
-import type { Action, CatalogItem, Command, Phase, PlayerView, Reply, RoomView, RoundResult, ReviewResult, Session } from '../shared/protocol.js';
+import type { Action, CatalogItem, Command, Phase, PlayerView, Reply, RoomExit, RoomView, RoundResult, ReviewResult, Session } from '../shared/protocol.js';
 import { DURATIONS, RULES, type Durations } from './config.js';
 import { CATALOG, TENDERS, validateContent, type Tender } from './data.js';
 import { bidError, failureFee, qualifies, standings } from './rules.js';
@@ -37,7 +37,8 @@ export class Game {
   readonly tenders: Tender[];
   private timer?: ReturnType<typeof setInterval>;
   constructor(readonly send: (socketId: string, state: RoomView) => void,
-    readonly replace: (socketId: string) => void = () => {}, private options: GameOptions = {}) {
+    readonly replace: (socketId: string) => void = () => {}, private options: GameOptions = {},
+    readonly exited: (socketId: string, event: RoomExit) => void = () => {}) {
     this.now = options.now ?? Date.now;
     this.durations = { ...DURATIONS, ...options.durations };
     if (Object.values(this.durations).some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error('단계 시간은 양의 정수 ms여야 합니다.');
@@ -98,9 +99,10 @@ export class Game {
           if (room.players.length >= 4) throw new Error('이미 4명이 참가했습니다.');
         }
         const player: Player = { id: randomUUID(), token: randomBytes(32).toString('hex'), socketId,
-          seat: room.players.length + 1, nickname, connected: true, ready: false,
+          seat: [1,2,3,4].find(seat => !room.players.some(p => p.seat === seat))!, nickname, connected: true, ready: false,
           funds: RULES.initialFunds, deliveries: 0, receipts: new Map() };
-        room.players.push(player); if (!room.hostId) room.hostId = player.id;
+        room.players.push(player); room.players.sort((a,b) => a.seat - b.seat);
+        if (!room.hostId) room.hostId = player.id;
         this.publish(room);
         const session: Session = { token: player.token, roomCode: room.code, playerId: player.id };
         return { ok: true, session };
@@ -116,6 +118,23 @@ export class Game {
       }
       const found = this.find(socketId); if (!found) throw new Error('먼저 방에 참가하세요.');
       const { room, player } = found;
+      if (c.type === 'closeRoom' || c.type === 'leave') {
+        if (c.roomCode !== room.code) throw new Error('현재 참가 중인 방과 다른 요청입니다.');
+        if (c.type === 'closeRoom' && player.id !== room.hostId) throw new Error('방장만 방을 닫을 수 있습니다.');
+        if (player.id === room.hostId) {
+          // 맵에서 먼저 제거하므로 재전송·타이머·재접속이 종료된 방을 다시 변경할 수 없습니다.
+          this.rooms.delete(room.code);
+          for (const p of room.players) if (p.socketId) this.exited(p.socketId, { roomCode: room.code, reason: 'hostClosed' });
+        } else {
+          if (room.phase === 'lobby') room.players = room.players.filter(p => p.id !== player.id);
+          // 경기 중 확정된 입찰과 자금은 유지하고, 남은 차례는 기존 시간 초과 규칙을 따릅니다.
+          player.socketId = null; player.connected = false;
+          player.token = randomBytes(32).toString('hex');
+          this.exited(socketId, { roomCode: room.code, reason: 'left' });
+          this.publish(room);
+        }
+        return { ok: true };
+      }
       if (c.type === 'submit') {
         if (typeof c.requestId !== 'string' || !/^[\w-]{1,100}$/.test(c.requestId)) throw new Error('잘못된 요청 ID입니다.');
         const signature = JSON.stringify({ phaseId: c.phaseId, action: c.action });
