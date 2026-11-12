@@ -1,0 +1,16 @@
+# Node.js 서버 한 대가 화면과 Socket.IO를 함께 제공합니다.
+services:
+  - type: web
+    name: nara-auction
+    runtime: node
+    region: singapore
+    plan: free
+    numInstances: 1
+    buildCommand: npm ci --include=dev && npm test && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    # 경기 중 코드 push로 서버가 재시작되지 않도록 수동 배포합니다.
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_ENV
+        value: production

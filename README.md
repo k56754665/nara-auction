@@ -5,7 +5,29 @@
 React + TypeScript + Vite 화면, Node.js + Socket.IO 서버를 한 프로젝트에서 관리합니다.
 실행 의존성은 React, React DOM, Socket.IO 서버/클라이언트 4개이며, 상태 관리·CSS·HTTP 서버는 기본 기능을 사용합니다.
 
-## 1. 바로 실행하기 (Windows)
+## 인터넷에 공개하기 (GitHub → Render)
+
+[Render에서 이 저장소 배포하기](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fk56754665%2Fnara-auction)
+
+1. 위 링크를 열고 Render에 로그인합니다. GitHub 계정으로 가입·로그인할 수 있습니다.
+2. 이 저장소 접근을 요청하면 허용합니다. 비공개 저장소라면 Render의 GitHub 연동에 이 저장소를 지정하세요.
+3. Blueprint 설정을 확인하고 배포합니다. 루트의 `render.yaml`에 무료 웹 서비스, 빌드·실행 명령, 상태 확인 경로가 준비되어 있습니다.
+4. 배포 상태가 **Live**가 되면 Render가 실제로 발급한 `https://…onrender.com` 주소를 엽니다. 아직 배포하지 않았다면 이 주소는 생성되지 않습니다.
+5. **게임 주소를 친구들에게 공유**합니다. 모두 같은 주소에서 닉네임을 입력하고 같은 방 코드를 사용하면 서로 다른 장소·네트워크에서도 같은 방에 참가할 수 있습니다. 친구들은 Node.js 설치나 GitHub·Render 로그인 없이 플레이합니다.
+
+GitHub 저장소 주소는 소스 코드 주소입니다. GitHub Pages는 정적 화면 호스팅이므로 이 게임의 Node.js·Socket.IO 서버를 실행할 수 없습니다.
+Render가 화면과 서버를 **같은 공개 HTTPS 주소**로 제공합니다. 사용자 PC를 켜 둘 필요가 없고 프론트엔드 서버 주소를 따로 설정하지 않아도 됩니다.
+
+현재 설정은 무료 인스턴스 **1대**입니다. 방이 서버 메모리에 있으므로 인스턴스 수를 늘리거나 여러 서버로 나누면 안 됩니다.
+무료 서비스는 15분 동안 트래픽이 없으면 쉬며, 다시 접속할 때 약 1분 걸릴 수 있습니다. 절전·서버 재시작·재배포 시 이전 경기는 사라집니다.
+경기 중 재시작을 피하려고 자동 재배포는 껐습니다. 코드를 GitHub에 올린 후 경기가 없을 때 Render의 **Manual Deploy → Deploy latest commit**으로 업데이트하세요.
+
+이 설정은 무료 플랜을 선택합니다. Render에서 별도로 유료 플랜으로 바꾸거나 추가 유료 자원을 만들 필요가 없습니다.
+실제 공개 배포 완료 여부와 공개 링크는 Render의 배포 결과로 확인해야 합니다. 설정 파일이나 GitHub push만으로 배포 완료를 의미하지 않습니다.
+
+참고: [GitHub Pages 설명](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages), [Render 배포 버튼](https://render.com/docs/deploy-to-render), [무료 서비스 제한](https://render.com/docs/free).
+
+## 1. 내 컴퓨터에서 바로 실행하기 (Windows)
 
 1. Node.js 22.12 이상을 설치합니다. 이 프로젝트를 검증한 버전은 22.20.0입니다.
 2. 이 폴더에서 PowerShell 또는 터미널을 열고 아래 명령을 순서대로 실행합니다.
