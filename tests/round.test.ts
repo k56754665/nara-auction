@@ -1,8 +1,9 @@
+import { validateContent } from '../server/data.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers.js';
 import { qualifies, bidError, failureFee, standings } from '../server/rules.js';
-import { CATALOG, TENDERS, validateContent } from '../server/data.js';
+import { CATALOG, TENDERS } from './fixtures/sample-data.js';
 
 test('PDF 노트북 예시: 자격 A·B·D, B -120만 원, A +200만 원, D 심사 종료', () => {
   const f = fixture(); f.start(); f.prices([970_000, 1_050_000, 1_150_000, 900_000]);

@@ -9,7 +9,7 @@ export function chooseBotAction(state: RoomView, botId: string, catalog: readonl
   if (state.phase === 'catalog' || state.phase === 'result') return me.acknowledged ? null : { kind: 'continue' };
   if (!t) return null;
   if (state.phase === 'price' && !me.priceSubmitted) {
-    const item = catalog.find(i => i.name === t.name && i.unit === t.unit);
+    const item = catalog.find(i => t.itemId ? i.id === t.itemId : i.name === t.name && i.unit === t.unit);
     const amount = item ? Math.min(1_000_000_000_000, Math.max(0, Math.round(item.unitPrice * (1 + (random() * 2 - 1) * BOT_CONFIG.priceErrorPercent / 100)))) : null;
     return { kind: 'price', amount };
   }
@@ -29,10 +29,12 @@ export function chooseBotAction(state: RoomView, botId: string, catalog: readonl
   }
   if (state.phase === 'reviewChoice') return { kind: 'challenge', accept: player.funds >= state.fee! && random() < BOT_CONFIG.challengeChance };
   if (state.phase === 'reviewAnswer') {
-    // 테스트 콘텐츠의 숫자 규격(메모리/SSD, 등급/보증)을 비교하되 실수할 수도 있습니다.
+    // 실제 등록 상품은 공개 규격·단위·인도조건을 비교합니다. 예제는 숫자 조건을 비교합니다.
     const numbers = (s: string) => (s.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
     const required = numbers(t.specs);
     const matches = t.choices.filter(c => {
+      if (t.source) return c.productId === t.source.productId && c.specification === t.specs
+        && c.unit === t.unit && c.delivery === t.source.delivery;
       const values = numbers(c.label);
       return required.length > 0 && values.length >= required.length && required.every((v,i) => values[i] >= v);
     });

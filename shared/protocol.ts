@@ -7,9 +7,24 @@ export interface PlayerView {
   priceSubmitted: boolean; bidSubmitted: boolean; eligible: boolean | null;
 }
 export type Phase = 'lobby' | 'catalog' | 'announcement' | 'price' | 'firstBid' | 'rebid' | 'reviewChoice' | 'reviewAnswer' | 'result' | 'finished';
-export interface CatalogItem { id: string; name: string; unit: string; unitPrice: number; specs: string; description: string }
-export interface Choice { id: string; label: string }
-export interface TenderView { id: string; agency: string; name: string; unit: string; quantity: number; budget: number; specs: string; question: string; choices: Choice[] }
+export interface ProductSource {
+  productId: string; supplier: string; contractNumber: string; contractLine: string;
+  contractStart: string; contractEnd: string; delivery: string; vat: string; checkedAt: string;
+  retainedAfterRefreshFailure: boolean; sourceUrl: string; imageSourceUrl: string; imageSha256: string;
+}
+export interface ContentInfo {
+  priceBasis: 'registeredContractPrice' | 'sample'; referenceDate: string | null;
+  bankVersion?: string; poolSize: number; catalogUrl?: string; retainedCount?: number;
+}
+export interface TriviaCard {
+  id: string; title: string; text: string; followup: string; period: string; caution: string;
+  sources: { title: string; publisher: string; url: string; publishedOn: string | null }[];
+}
+export interface CatalogItem { id: string; name: string; unit: string; unitPrice: number; specs: string; description: string;
+  category?: string; imageUrl?: string; imageAlt?: string; source?: ProductSource; revealNote?: string }
+export interface Choice { id: string; label: string; productId?: string; specification?: string; unit?: string; delivery?: string; imageUrl?: string }
+export interface TenderView { id: string; itemId?: string; agency: string; name: string; unit: string; quantity: number; budget: number; specs: string; question: string; choices: Choice[];
+  imageUrl?: string; imageAlt?: string; source?: ProductSource }
 export type ReviewResult = 'pending' | 'passed' | 'failed' | 'declined' | 'notReached';
 export interface ResultRow {
   playerId: string; guess: number | null; error: number | null; eligible: boolean;
@@ -18,13 +33,13 @@ export interface ResultRow {
 }
 export interface RoundResult {
   round: number; name: string; winnerId: string | null; contract: number | null;
-  cost: number; fee: number; reason: string; rows: ResultRow[]; correctLabel: string;
+  cost: number; fee: number; reason: string; rows: ResultRow[]; correctLabel: string; revealNote?: string; trivia?: TriviaCard;
 }
 export interface Standing { playerId: string; rank: number; eligible: boolean; winner: boolean; funds: number; deliveries: number }
 export interface RoomView {
   code: string; hostId: string; phase: Phase; phaseId: string; deadline: number | null;
   players: PlayerView[]; serverNow: number;
-  roundNumber: number; totalRounds: number; catalog: CatalogItem[];
+  roundNumber: number; totalRounds: number; catalog: CatalogItem[]; contentInfo: ContentInfo;
   tender: TenderView | null; unitPrice: number | null; cost: number | null; fee: number | null;
   lowestBid: number | null; bids: { playerId: string; amount: number }[]; lotteryOrder: string[];
   activeId: string | null; result: RoundResult | null; history: RoundResult[]; standings: Standing[];

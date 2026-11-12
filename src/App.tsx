@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { command, forgetSession, leaveRoom, submit, useConnection } from './connection';
-import type { Phase, PlayerView, RoomView, RoundResult } from '../shared/protocol';
+import type { Phase, PlayerView, ProductSource, RoomView, RoundResult } from '../shared/protocol';
 
 export const money = (v: number) => `${v.toLocaleString('ko-KR')}원`;
 const titles: Record<Phase, string> = { lobby: '대기실', catalog: '물품 카탈로그', announcement: '입찰 공고', price: '가격 퀴즈', firstBid: '첫 입찰', rebid: '공개 재입찰', reviewChoice: '규격 심사 선택', reviewAnswer: '규격 퀴즈', result: '라운드 결과', finished: '최종 순위' };
 const steps: Phase[] = ['announcement','price','firstBid','rebid','reviewAnswer','result'];
 const nameOf = (s: RoomView, id: string | null) => s.players.find(p => p.id === id)?.nickname ?? '없음';
+function ProductPhoto({ src, alt }: { src?: string; alt?: string }) {
+  return src ? <img className="product-photo" src={src} alt={alt ?? '등록 상품 사진'} loading="lazy" /> : null;
+}
+function SourceDetails({ source: s }: { source?: ProductSource }) {
+  return s ? <details className="source-details"><summary>등록 정보·조회일·출처</summary>
+    <p>물품식별번호 {s.productId}<br />공급업체 {s.supplier}<br />계약 {s.contractNumber} / 순번 {s.contractLine}<br />계약기간 {s.contractStart} ~ {s.contractEnd}<br />{s.delivery} · {s.vat}<br />확인일 {s.checkedAt.slice(0, 10)}</p>
+    {s.retainedAfterRefreshFailure && <p>추가 조회가 제한되어 이전에 확인한 값을 유지한 상품입니다.</p>}
+    <a href={s.sourceUrl} target="_blank" rel="noreferrer">조달청 품목정보 API 출처</a> · <a href={s.imageSourceUrl} target="_blank" rel="noreferrer">등록 사진 원본</a>
+  </details> : null;
+}
 function playerStatus(p: PlayerView, s: RoomView) {
   if (!p.connected) return '연결 끊김';
   if (s.phase === 'lobby') return p.ready ? '준비 완료' : '준비 중';
@@ -65,9 +75,10 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
   if (s.phase === 'lobby') return <><small>GET READY</small><h2>모두 준비되면 출발합니다</h2><p>초기 운영자금 3,000만 원으로 시작해 10라운드 동안 계약에 도전합니다.<br />가격 퀴즈 → 입찰 → 규격 심사를 통과하면 납품 수익을 얻습니다.</p>
     <div className="actions"><button disabled={disabled} onClick={() => void command({ type: 'ready', ready: !me.ready })}>{me.ready ? '준비 취소' : '준비 완료'}</button>
       {s.hostId === myId && <button className="dark" disabled={disabled || s.players.some(p => !p.ready || !p.connected)} onClick={() => void command({ type: 'start' })}>게임 시작</button>}</div><p className="muted">사람 {s.players.length}명 + 봇 {4-s.players.length}명으로 진행합니다. 참가한 사람 모두 준비하면 방장이 시작할 수 있습니다. 빈 자리는 시작할 때 봇으로 채웁니다.</p></>;
-  if (s.phase === 'catalog') return <><small>STUDY / 30 ITEMS</small><h2>단가와 규격을 기억하세요</h2><p>최대 15분 동안 열람할 수 있습니다. 이 중 10종이 출제됩니다.</p>
+  if (s.phase === 'catalog') return <><small>STUDY / 30 ITEMS</small><h2>단가와 규격을 기억하세요</h2><p>상품 풀 {s.contentInfo.poolSize}종에서 고른 30종입니다. 최대 15분 동안 열람하며, 이 중 10종이 출제됩니다.</p>
+    {s.contentInfo.priceBasis === 'registeredContractPrice' && <div className="callout">{s.contentInfo.referenceDate} 조회 등록 계약단가입니다. 부가세 포함이며 상품별 단위·인도조건을 함께 기억하세요. 실시간 가격이나 제조 원가가 아닙니다.</div>}
     <label>물품 검색<input value={query} onChange={e => setQuery(e.target.value)} placeholder="물품명을 입력하세요" /></label>
-    <div className="catalog">{s.catalog.filter(i => i.name.includes(query)).map(i => <article key={i.id}><small>{i.id.toUpperCase()}</small><h3>{i.name}</h3><strong>{money(i.unitPrice)} / {i.unit}</strong><p>{i.specs}</p><small>{i.description}</small></article>)}</div>{next('열람 완료')}</>;
+    <div className="catalog">{s.catalog.filter(i => `${i.name} ${i.specs} ${i.source?.productId ?? ''}`.includes(query)).map(i => <article key={i.id} data-item-id={i.id}><ProductPhoto src={i.imageUrl} alt={i.imageAlt} /><small>{i.category ?? i.id.toUpperCase()}</small><h3>{i.name}</h3><strong data-unit-price={i.unitPrice}>{money(i.unitPrice)} / {i.unit}</strong><p>{i.specs}</p>{i.source && <p>{i.source.delivery} · {i.source.vat}<br />물품식별번호 {i.source.productId}</p>}<small>{i.description}</small><SourceDetails source={i.source} /></article>)}</div>{next('열람 완료')}</>;
   if (s.phase === 'finished') {
     const winners = s.standings.filter(p => p.winner);
     return <><small>FINAL RESULTS / {s.totalRounds} ROUNDS</small><h2>{winners.length ? `${winners.map(p => nameOf(s,p.playerId)).join(' · ')} ${winners.length > 1 ? '공동 우승' : '우승'}` : '우승자 없음'}</h2>
@@ -75,7 +86,7 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
       <button disabled={disabled} onClick={onExit}>{s.hostId === myId ? '방 닫고 새 경기로' : '메인으로 돌아가기'}</button></>;
   }
   if (!t) return null;
-  const tender = <div className="notice"><div><small>{t.agency} · 공고 {s.roundNumber.toString().padStart(2,'0')}</small><h2>{t.name} {t.quantity}{t.unit} 납품</h2></div><dl><div><dt>배정예산</dt><dd>{money(t.budget)}</dd></div><div><dt>필수 규격</dt><dd>{t.specs}</dd></div>{s.cost !== null && <><div><dt>기준 단가</dt><dd>{money(s.unitPrice!)} / {t.unit}</dd></div><div><dt>총 납품원가</dt><dd>{money(s.cost)}</dd></div></>}</dl></div>;
+  const tender = <div className="notice" data-item-id={t.itemId} data-budget={t.budget}><ProductPhoto src={t.imageUrl} alt={t.imageAlt} /><div><small>{t.agency} · 공고 {s.roundNumber.toString().padStart(2,'0')}{t.source && ' · 게임용 발주'}</small><h2>{t.name} {t.quantity}{t.unit} 납품</h2></div><dl><div><dt>배정예산</dt><dd>{money(t.budget)}</dd></div><div><dt>필수 규격</dt><dd>{t.specs}</dd></div>{t.source && <div><dt>등록 조건</dt><dd>물품식별번호 {t.source.productId}<br />{t.source.delivery} · {t.source.vat}</dd></div>}{s.cost !== null && <><div><dt>{t.source ? '등록 계약단가' : '기준 단가'}</dt><dd>{money(s.unitPrice!)} / {t.unit}</dd></div><div><dt>게임상 총 납품원가</dt><dd>{money(s.cost)}</dd></div></>}</dl><SourceDetails source={t.source} />{t.source && <small>공고 기관·수량·예산은 게임용입니다. 등록 계약단가 × 수량을 게임상 원가로 사용합니다.</small>}</div>;
   if (s.phase === 'announcement') return <>{tender}<div className="callout">잠시 후 가격 퀴즈가 시작됩니다. {t.unit}당 기준 단가를 맞혀주세요.</div></>;
   if (s.phase === 'price') return <>{tender}<h3>{t.unit}당 기준 단가는 얼마일까요?</h3><p>정수 원 단위로 한 번 제출합니다. 기준 단가의 ±{s.rules.tolerancePercent}% 이내면 입찰 자격을 얻습니다.</p>
     {s.me.priceSubmitted ? <div className="callout">제출 완료: {s.me.guess === null ? '이번 라운드 건너뜀' : money(s.me.guess)}<br /><small>다른 업체의 제출 또는 마감을 기다립니다.</small></div> : <><MoneyInput label="예상 단가 (원)" disabled={disabled} onSubmit={amount => act({ kind: 'price', amount })} /><button className="text" disabled={disabled} onClick={() => act({ kind: 'price', amount: null })}>이번 라운드 건너뛰기</button></>}</>;
@@ -88,10 +99,12 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
   if (s.phase === 'rebid') return <>{tender}<div className="lowest"><small>현재 최저가</small><strong>{money(s.lowestBid!)}</strong></div><h3>{mine ? '내 재입찰 차례입니다' : `${nameOf(s,s.activeId)} 재입찰 중`}</h3><p>좌석 순으로 한 번씩 기회가 주어집니다. 현재 1위는 자동으로 건너뜁니다.<br />현재 최저가보다 최소 {money(s.rules.bidStep)} 낮아야 합니다. 포기·시간 초과는 기존 입찰가를 유지합니다.</p>
     {mine ? <><MoneyInput label="재입찰가 (원)" step={s.rules.bidStep} disabled={disabled || s.lowestBid! - s.rules.bidStep < s.cost!} onSubmit={amount => act({ kind: 'rebid', amount })} /><button className="secondary" disabled={disabled} onClick={() => act({ kind: 'rebid', amount: null })}>기존 입찰가 유지</button></> : <div className="callout">다른 업체의 차례입니다. 현재 내 최종 입찰: {s.me.finalBid === null ? '미입찰' : money(s.me.finalBid)}</div>}</>;
   if (s.phase === 'reviewChoice' || s.phase === 'reviewAnswer') return <>{tender}<h3>{mine ? '내 규격 심사 차례입니다' : `${nameOf(s,s.activeId)} 규격 심사 중`}</h3><p>정답이면 자신의 최종 입찰가로 계약합니다. 오답·답안 시간 초과 시 <strong>{money(s.fee!)}</strong>이 차감됩니다.</p>
-    {!mine ? <div className="callout">심사 결과를 기다립니다.</div> : s.phase === 'reviewChoice' ? <><p>후순위 후보입니다. 도전하시겠습니까? 선택 시간 초과는 비용 없이 포기합니다.</p><div className="actions"><button disabled={disabled} onClick={() => act({ kind: 'challenge', accept: true })}>규격 심사 도전</button><button className="secondary" disabled={disabled} onClick={() => act({ kind: 'challenge', accept: false })}>심사 포기</button></div></> : <><p>{t.question}</p><div className="choices">{t.choices.map((c,i) => <button className="secondary" key={c.id} disabled={disabled} onClick={() => act({ kind: 'answer', choiceId: c.id })}><span>{i+1}</span>{c.label}</button>)}</div><small>보기를 누르면 즉시 확정 제출됩니다.</small></>}</>;
+    {!mine ? <div className="callout">심사 결과를 기다립니다.</div> : s.phase === 'reviewChoice' ? <><p>후순위 후보입니다. 도전하시겠습니까? 선택 시간 초과는 비용 없이 포기합니다.</p><div className="actions"><button disabled={disabled} onClick={() => act({ kind: 'challenge', accept: true })}>규격 심사 도전</button><button className="secondary" disabled={disabled} onClick={() => act({ kind: 'challenge', accept: false })}>심사 포기</button></div></> : <><p>{t.question}</p><div className="choices">{t.choices.map((c,i) => <button className="secondary" key={c.id} data-product-id={c.productId} disabled={disabled} onClick={() => act({ kind: 'answer', choiceId: c.id })}><span>{i+1}</span><div><ProductPhoto src={c.imageUrl} /><div>{c.label}</div>{c.productId && <small>물품식별번호 {c.productId}</small>}</div></button>)}</div><small>보기를 누르면 즉시 확정 제출됩니다.</small></>}</>;
   const result = s.result!;
   return <><small>ROUND {s.roundNumber} RESULT</small><h2>{result.winnerId ? `${nameOf(s,result.winnerId)} 낙찰` : '유찰'}</h2><p>{result.reason}</p>
     <div className="result-metrics"><div><small>계약가</small><strong>{result.contract === null ? '없음' : money(result.contract)}</strong></div><div><small>총 납품원가</small><strong>{money(result.cost)}</strong></div><div><small>규격 정답</small><strong>{result.correctLabel}</strong></div></div>
+    {result.revealNote && <p className="callout">{result.revealNote}</p>}
+    {result.trivia && <aside className="trivia"><small>조달 잡학 · 정산에 영향 없음</small><h3>{result.trivia.title}</h3><p>{result.trivia.text}</p><p>{result.trivia.followup}</p><small>{result.trivia.period}</small><details><summary>설명과 출처</summary><p>{result.trivia.caution}</p>{result.trivia.sources.map(source => <p key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><br /><small>{source.publisher} {source.publishedOn}</small></p>)}</details></aside>}
     <ResultTable state={s} result={result} />{next(s.roundNumber === s.totalRounds ? '최종 순위 확인' : '다음 라운드 준비')}</>;
 }
 
@@ -120,5 +133,5 @@ export function App() {
           {state.bids.length > 0 && <section className="card"><small>공개 입찰 순위</small><ol className="bid-list">{state.bids.map(b => <li key={b.playerId}><span>{nameOf(state,b.playerId)}</span><strong>{money(b.amount)}</strong></li>)}</ol></section>}
           {state.lotteryOrder.length > 0 && <section className="card"><small>이번 라운드 추첨 순서</small><p className="muted">{state.lotteryOrder.map(id => nameOf(state,id)).join(' → ')}</p><small>동일 입찰가·동일 가격 오차일 때 적용</small></section>}</aside></div>
       {state.history.length > 0 && <section className="card history"><h3>지난 라운드 기록</h3>{state.history.map(r => <details key={r.round}><summary>{r.round}R · {r.name} <span>{r.winnerId ? `${nameOf(state,r.winnerId)} 낙찰 · ${money(r.contract!)}` : '유찰'}</span></summary><ResultTable state={state} result={r} /></details>)}</section>}
-    </>}<footer>가상의 테스트 물품으로 진행하는 프로토타입 · 실제 조달 서비스와 무관합니다.</footer></main>;
+    </>}<footer>나라장터 등록 상품 104종 · 2026-11-09 조회 계약단가 · 공고 기관·수량·예산은 게임용입니다.<br />실제 조달 계약을 진행하는 서비스가 아닙니다.</footer></main>;
 }

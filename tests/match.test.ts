@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { io, type Socket } from 'socket.io-client';
 import { createApp } from '../server/app.js';
-import { TENDERS } from '../server/data.js';
+import { CATALOG, TENDERS } from './fixtures/sample-data.js';
 import type { Action, ClientEvents, Command, Reply, RoomView, ServerEvents, Session } from '../shared/protocol.js';
 
 test('실제 Socket.IO 4세션 10라운드 완주: 중도 재접속·비공개 전송·중복 정산 방지·최종 순위', async () => {
   let now = Date.now(); let count = 0;
-  const app = await createApp(false,{ now:()=>now,autoTick:false,shuffle:ids=>ids });
+  const app = await createApp(false,{ now:()=>now,catalog:CATALOG,tenders:TENDERS,autoTick:false,shuffle:ids=>ids });
   await new Promise<void>(r=>app.http.listen(0,'127.0.0.1',r));
   const address = app.http.address(); assert(address && typeof address==='object');
   const url = `http://127.0.0.1:${address.port}`;

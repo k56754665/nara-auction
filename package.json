@@ -15,7 +15,8 @@
     "test:browser": "tsx tests/browser-smoke.ts",
     "test:browser:exit": "tsx tests/room-exit-browser.ts",
     "test:browser:bots": "tsx tests/bots-browser.ts",
-    "test:live": "tsx tests/live-smoke.ts"
+    "test:live": "tsx tests/live-smoke.ts",
+    "import:data": "node scripts/import-nara-data.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",

@@ -2,7 +2,7 @@ import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { Action, CatalogItem, Command, Phase, PlayerView, Reply, RoomExit, RoomView, RoundResult, ReviewResult, Session } from '../shared/protocol.js';
 import { BOT_CONFIG, DURATIONS, RULES, type Durations } from './config.js';
 import { chooseBotAction } from './bots.js';
-import { CATALOG, TENDERS, validateContent, type Tender } from './data.js';
+import { createMatchContent, validateContent, type MatchContent, type Tender } from './data.js';
 import { bidError, failureFee, qualifies, standings } from './rules.js';
 
 interface Player extends Omit<PlayerView, 'priceSubmitted' | 'bidSubmitted' | 'eligible'> {
@@ -17,6 +17,7 @@ interface Round {
   rebidCursor: number; reviewOrder: string[]; reviewIndex: number; settled: boolean;
 }
 interface Room {
+  content: MatchContent;
   code: string; hostId: string; phase: Phase; phaseId: string; deadline: number | null;
   players: Player[]; roundIndex: number; round: Round | null; history: RoundResult[];
   acknowledged: Set<string>; activeId: string | null;
@@ -26,6 +27,7 @@ export interface GameOptions {
   now?: () => number; autoTick?: boolean; durations?: Partial<Durations>;
   catalog?: CatalogItem[]; tenders?: Tender[]; shuffle?: (ids: string[]) => string[];
   botDelayMs?: number; botRandom?: () => number;
+  contentFactory?: () => MatchContent;
 }
 function shuffled(ids: string[]) {
   const a = [...ids];
@@ -36,8 +38,6 @@ export class Game {
   readonly rooms = new Map<string, Room>();
   readonly now: () => number;
   readonly durations: Durations;
-  readonly catalog: CatalogItem[];
-  readonly tenders: Tender[];
   private readonly botDelayMs: number;
   private timer?: ReturnType<typeof setInterval>;
   constructor(readonly send: (socketId: string, state: RoomView) => void,
@@ -48,8 +48,10 @@ export class Game {
     if (!Number.isSafeInteger(this.botDelayMs) || this.botDelayMs < 0) throw new Error('봇 대기 시간은 0 이상의 정수 ms여야 합니다.');
     this.durations = { ...DURATIONS, ...options.durations };
     if (Object.values(this.durations).some(n => !Number.isSafeInteger(n) || n <= 0)) throw new Error('단계 시간은 양의 정수 ms여야 합니다.');
-    this.catalog = options.catalog ?? CATALOG; this.tenders = options.tenders ?? TENDERS;
-    validateContent(this.catalog, this.tenders);
+    if (options.catalog || options.tenders) {
+      if (!options.catalog || !options.tenders) throw new Error('고정 카탈로그와 공고를 함께 지정하세요.');
+      validateContent(options.catalog, options.tenders);
+    }
     if (options.autoTick !== false) { this.timer = setInterval(() => this.tick(), 100); this.timer.unref(); }
   }
   view(room: Room, player: Player): RoomView {
@@ -59,13 +61,15 @@ export class Game {
     const e = r?.entries.get(player.id);
     return {
       code: room.code, hostId: room.hostId, phase: room.phase, phaseId: room.phaseId,
-      deadline: room.deadline, serverNow: this.now(), roundNumber: r ? Math.min(room.roundIndex + 1, this.tenders.length) : 0, totalRounds: this.tenders.length,
+      deadline: room.deadline, serverNow: this.now(), roundNumber: r ? Math.min(room.roundIndex + 1, room.content.tenders.length) : 0, totalRounds: room.content.tenders.length,
+      contentInfo: room.content.info,
       players: room.players.map(({ token: _t, socketId: _s, receipts: _r, ...p }) => ({ ...p,
         priceSubmitted: r?.entries.get(p.id)?.priceSubmitted ?? false,
         bidSubmitted: r?.entries.get(p.id)?.bidSubmitted ?? false,
         eligible: pricesOpen ? r?.entries.get(p.id)?.eligible ?? false : null })),
-      catalog: room.phase === 'catalog' ? this.catalog : [],
-      tender: t ? { id: t.id, agency: t.agency, name: t.name, unit: t.unit, quantity: t.quantity,
+      catalog: room.phase === 'catalog' ? room.content.catalog : [],
+      tender: t ? { id: t.id, itemId: t.itemId, agency: t.agency, name: t.name, unit: t.unit, quantity: t.quantity,
+        imageUrl: t.imageUrl, imageAlt: t.imageAlt, source: t.source,
         budget: t.budget, specs: t.specs, question: t.question,
         choices: room.phase === 'reviewAnswer' ? t.choices : [] } : null,
       unitPrice: pricesOpen && t ? t.unitPrice : null, cost: pricesOpen && t ? t.unitPrice * t.quantity : null,
@@ -94,7 +98,12 @@ export class Game {
         let room: Room;
         if (c.type === 'create') {
           let code: string; do { code = randomBytes(3).toString('hex').toUpperCase(); } while (this.rooms.has(code));
-          room = { code, hostId: '', phase: 'lobby', phaseId: randomUUID(), deadline: null, players: [],
+          const content = this.options.catalog && this.options.tenders ? {
+            catalog: this.options.catalog, tenders: this.options.tenders,
+            info: { priceBasis: 'sample' as const, referenceDate: null, poolSize: this.options.catalog.length }, trivia: [],
+          } : (this.options.contentFactory ?? createMatchContent)();
+          validateContent(content.catalog, content.tenders);
+          room = { content, code, hostId: '', phase: 'lobby', phaseId: randomUUID(), deadline: null, players: [],
             roundIndex: -1, round: null, history: [], acknowledged: new Set(), activeId: null, botActionAt: null };
           this.rooms.set(code, room);
         } else {
@@ -177,8 +186,8 @@ export class Game {
   }
   private beginRound(room: Room) {
     room.roundIndex++;
-    if (room.roundIndex >= this.tenders.length) { this.enter(room, 'finished'); return; }
-    room.round = { tender: this.tenders[room.roundIndex], entries: new Map(room.players.map(p => [p.id,
+    if (room.roundIndex >= room.content.tenders.length) { this.enter(room, 'finished'); return; }
+    room.round = { tender: room.content.tenders[room.roundIndex], entries: new Map(room.players.map(p => [p.id,
       { priceSubmitted: false, guess: null, error: null, eligible: false, bidSubmitted: false,
         firstBid: null, finalBid: null, review: 'pending', delta: 0 }])),
       lottery: (this.options.shuffle ?? shuffled)(room.players.map(p => p.id)),
@@ -233,6 +242,7 @@ export class Game {
     room.history.push({ round: room.roundIndex + 1, name: r.tender.name, winnerId,
       contract: winnerId ? r.entries.get(winnerId)!.finalBid : null, cost, fee: failureFee(r.tender.budget), reason,
       correctLabel: r.tender.choices.find(c => c.id === r.tender.answerId)!.label,
+      revealNote: r.tender.revealNote, trivia: room.content.trivia[room.roundIndex],
       rows: room.players.map(p => ({ playerId: p.id, ...r.entries.get(p.id)!, funds: p.funds, deliveries: p.deliveries })) });
     this.enter(room, 'result');
   }
@@ -303,7 +313,7 @@ export class Game {
     room.botActionAt = null;
     for (const bot of room.players.filter(p => p.isBot)) {
       if (room.phaseId !== phaseId) break;
-      const action = chooseBotAction(this.view(room, bot), bot.id, this.catalog, this.options.botRandom ?? Math.random);
+      const action = chooseBotAction(this.view(room, bot), bot.id, room.content.catalog, this.options.botRandom ?? Math.random);
       if (action) this.act(room, bot, action);
     }
     this.publish(room);

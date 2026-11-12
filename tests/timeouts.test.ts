@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers.js';
-import { TENDERS } from '../server/data.js';
+import { TENDERS } from './fixtures/sample-data.js';
 
 test('카탈로그·공고 서버 마감, 가격 전원 미제출 시 유찰, 정확한 마감 시각 거절', () => {
   const f = fixture(); assert(f.game.command('a',{type:'start'}).ok);

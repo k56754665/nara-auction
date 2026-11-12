@@ -5,3 +5,4 @@ build-server/
 tmp/
 *.log
 .env
+/nara-all-data-2026-11-13/

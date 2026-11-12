@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { io, type Socket } from 'socket.io-client';
 import { createApp } from '../server/app.js';
-import { TENDERS } from '../server/data.js';
+import { TENDERS } from './fixtures/sample-data.js';
 import { fixture } from './helpers.js';
 import type { ClientEvents, Command, Reply, RoomView, ServerEvents } from '../shared/protocol.js';
 

@@ -1,5 +1,13 @@
 :root { font-family: "Pretendard", "Malgun Gothic", system-ui, sans-serif; color: #183343; background: #edf2f4; font-synthesis: none; line-height: 1.65; }
 * { box-sizing: border-box; }
+.product-photo { display: block; width: 100%; height: 170px; object-fit: contain; background: white; border-radius: 8px; margin-bottom: 12px; }
+.notice > .product-photo { max-width: 270px; height: 190px; }
+.catalog article, .notice, .choices button > div { min-width: 0; overflow-wrap: anywhere; }
+.source-details { margin: 12px 0; font-size: 12px; }
+.source-details summary { cursor: pointer; color: #147861; }
+.source-details p { font-size: 12px; }
+.choices .product-photo { width: 140px; max-width: 100%; height: 100px; }
+.trivia { border-left: 4px solid #147861; background: #f0f7f4; padding: 16px; margin: 20px 0; overflow-wrap: anywhere; }
 body { margin: 0; }
 button, input { font: inherit; }
 button { cursor: pointer; border: 0; background: #147861; color: white; padding: 12px 22px; border-radius: 9px; font-weight: 700; }

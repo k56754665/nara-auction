@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { chromium, type Page } from 'playwright';
 import { createApp } from '../server/app.js';
-import { TENDERS } from '../server/data.js';
+import { CATALOG, TENDERS } from './fixtures/sample-data.js';
 
 let now = Date.now();
-const app = await createApp(false, { now: () => now, autoTick: false, shuffle: ids => ids });
+const app = await createApp(false, { now: () => now, catalog: CATALOG, tenders: TENDERS, autoTick: false, shuffle: ids => ids });
 await new Promise<void>(r => app.http.listen(0,'127.0.0.1',r));
 const address = app.http.address(); assert(address && typeof address === 'object');
 const url = `http://127.0.0.1:${address.port}`;
