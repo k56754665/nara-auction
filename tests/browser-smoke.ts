@@ -2,13 +2,16 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { chromium, type Page } from 'playwright';
 import { createApp } from '../server/app.js';
+import { TENDERS } from '../server/data.js';
 
 let now = Date.now();
 const app = await createApp(false, { now: () => now, autoTick: false, shuffle: ids => ids });
 await new Promise<void>(r => app.http.listen(0,'127.0.0.1',r));
 const address = app.http.address(); assert(address && typeof address === 'object');
 const url = `http://127.0.0.1:${address.port}`;
-const browser = await chromium.launch({ channel: process.env.PW_CHANNEL ?? 'chrome', headless: true });
+const browser = await chromium.launch({ channel: process.env.PW_CHANNEL ?? 'chrome', headless: true }).catch(async error => {
+  await app.close(); throw error;
+});
 const errors: string[] = [];
 const pages: Page[] = [];
 const phase = async (label: string) => { await pages[0].locator('.room-stage strong').filter({ hasText: label }).waitFor(); };
@@ -65,6 +68,38 @@ try {
   await pages[0].setViewportSize({width:390,height:844});
   await pages[0].screenshot({path:'tmp/browser/mobile-result.png',fullPage:true});
   assert(await pages[0].evaluate<boolean>('document.documentElement.scrollWidth <= window.innerWidth'));
+  await pages[0].setViewportSize({width:1360,height:960});
+  for (let round=1;round<10;round++) {
+    for (const p of pages) await p.getByRole('button',{name:'다음 라운드 준비',exact:true}).click();
+    await phase('입찰 공고'); expire(); await phase('가격 퀴즈');
+    const t = TENDERS[round];
+    for (const p of pages) {
+      await p.getByLabel('예상 단가 (원)',{exact:true}).fill(String(t.unitPrice));
+      await p.getByRole('button',{name:'확정 제출',exact:true}).click();
+    }
+    await phase('첫 입찰');
+    await pages[0].getByLabel('첫 입찰가 (원)',{exact:true}).fill(String(t.budget));
+    await pages[0].getByRole('button',{name:'확정 제출',exact:true}).click();
+    for (const p of pages.slice(1)) await p.getByRole('button',{name:'입찰 포기',exact:true}).click();
+    await phase('규격 퀴즈');
+    const correctIndex=t.choices.findIndex(c=>c.id===t.answerId);
+    await pages[0].getByRole('button',{name:`${correctIndex+1} ${t.choices[correctIndex].label}`,exact:true}).click();
+    await phase('라운드 결과');
+    assert.equal([...app.game.rooms.values()][0].history.length,round+1);
+  }
+  for (const p of pages) await p.getByRole('button',{name:'최종 순위 확인',exact:true}).click();
+  await phase('최종 순위');
+  await pages[0].getByRole('heading',{name:'A 우승',exact:true}).waitFor();
+  await pages[2].reload(); await pages[2].getByRole('heading',{name:'A 우승',exact:true}).waitFor();
+  const final=[...app.game.rooms.values()][0];
+  assert.equal(final.players[0].funds,67_000_000); assert.equal(final.players[0].deliveries,10);
+  assert.equal(await pages[0].locator('.history details').count(),10);
+  await pages[0].screenshot({path:'tmp/browser/final-ranking.png',fullPage:true});
+  const mobile = await browser.newContext({viewport:{width:390,height:844}});
+  const entry = await mobile.newPage(); await entry.goto(url);
+  await entry.getByLabel('닉네임',{exact:true}).waitFor();
+  await entry.screenshot({path:'tmp/browser/mobile-entry.png',fullPage:true});
+  assert(await entry.evaluate<boolean>('document.documentElement.scrollWidth <= window.innerWidth'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: 독립된 Chrome 4개 컨텍스트, 대기실→1라운드, 가격/비공개 입찰 새로고침 복원, PDF 예시 정산, 모바일 너비, JS 오류 없음');
+  console.log('PASS: 독립된 Chrome 4개 컨텍스트, 대기실→10라운드→최종 우승, 가격/비공개 입찰/최종 순위 새로고침 복원, PDF 예시 정산, 모바일 너비, JS 오류 없음');
 } finally { await browser.close(); await app.close(); }

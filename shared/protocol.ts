@@ -40,6 +40,6 @@ export type Command =
   | { type: 'ready'; ready: boolean }
   | { type: 'start' }
   | { type: 'submit'; requestId: string; phaseId: string; action: Action };
-export type Reply = { ok: true; session?: Session } | { ok: false; error: string };
+export type Reply = { ok: true; session?: Session } | { ok: false; error: string; code?: 'SESSION_NOT_FOUND' | 'TRANSPORT' };
 export interface ClientEvents { command: (command: Command, ack: (reply: Reply) => void) => void }
 export interface ServerEvents { state: (state: RoomView) => void; replaced: () => void }

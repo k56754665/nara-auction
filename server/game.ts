@@ -108,7 +108,7 @@ export class Game {
       if (c.type === 'resume') {
         if (this.find(socketId)) throw new Error('이미 연결된 참가자입니다.');
         const room = this.rooms.get(c.code); const player = room?.players.find(p => p.token === c.token);
-        if (!room || !player) throw new Error('복원할 경기가 없습니다. 서버가 재시작되었을 수 있습니다.');
+        if (!room || !player) return { ok: false, code: 'SESSION_NOT_FOUND', error: '복원할 경기가 없습니다. 서버가 재시작되었을 수 있습니다.' };
         const oldSocket = player.socketId; player.socketId = socketId; player.connected = true;
         if (oldSocket && oldSocket !== socketId) this.replace(oldSocket);
         this.expire(room); this.publish(room);

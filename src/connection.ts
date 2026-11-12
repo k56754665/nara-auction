@@ -16,9 +16,14 @@ function update(patch: Partial<typeof snapshot>) {
 }
 const socket: Socket<ServerEvents, ClientEvents> = io({ autoConnect: false });
 socket.on('connect', () => {
-  update({ connected: true, error: '' });
+  update({ connected: !session, error: '' });
   if (session) void command({ type: 'resume', code: session.roomCode, token: session.token }).then(reply => {
-    if (!reply.ok) { session = null; sessionStorage.removeItem(key); update({ session: null, state: null }); }
+    if (!reply.ok && reply.code === 'SESSION_NOT_FOUND') {
+      session = null; sessionStorage.removeItem(key); update({ session: null, state: null, connected: true });
+    } else if (!reply.ok) {
+      // 응답 유실은 자리 소멸이 아닙니다. 토큰을 유지하고 연결·복원을 다시 시도합니다.
+      socket.disconnect(); socket.connect();
+    } else update({ connected: true });
   });
 });
 socket.on('disconnect', () => update({ connected: false }));
@@ -30,7 +35,7 @@ socket.on('replaced', () => {
 socket.connect();
 
 export async function command(c: Command): Promise<Reply> {
-  if (!socket.connected) { const reply = { ok: false as const, error: '연결 복구 후 다시 시도하세요.' }; update({ error: reply.error }); return reply; }
+  if (!socket.connected) { const reply = { ok: false as const, code: 'TRANSPORT' as const, error: '연결 복구 후 다시 시도하세요.' }; update({ error: reply.error }); return reply; }
   update({ error: '' });
   try {
     const reply = await socket.timeout(5_000).emitWithAck('command', c);
@@ -39,7 +44,7 @@ export async function command(c: Command): Promise<Reply> {
     } else if (!reply.ok) update({ error: reply.error });
     return reply;
   } catch {
-    const reply = { ok: false as const, error: '응답이 지연됩니다. 현재 제출 상태를 확인한 뒤 다시 시도하세요.' };
+    const reply = { ok: false as const, code: 'TRANSPORT' as const, error: '응답이 지연됩니다. 현재 제출 상태를 확인한 뒤 다시 시도하세요.' };
     update({ error: reply.error }); return reply;
   }
 }
