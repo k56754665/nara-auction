@@ -42,12 +42,12 @@ try {
       const host=pages[0];
       if(humans===1) await host.screenshot({path:'tmp/browser/solo-lobby.png',fullPage:true});
       await host.getByRole('button',{name:'게임 시작',exact:true}).click();
-      await host.getByRole('heading',{name:'단가와 규격을 기억하세요',exact:true}).waitFor();
+      await host.getByRole('heading',{name:'사진과 가격을 기억하세요',exact:true}).waitFor();
       assert.equal(await host.locator('.players .bot-player').count(),4-humans);
       assert.equal(await host.locator('.players .card').count(),4);
       const botNames=await host.locator('.bot-player h3').allTextContents();
       if(humans===1) await host.screenshot({path:'tmp/browser/solo-bots.png',fullPage:true});
-      await host.reload(); await host.getByRole('heading',{name:'단가와 규격을 기억하세요',exact:true}).waitFor();
+      await host.reload(); await host.getByRole('heading',{name:'사진과 가격을 기억하세요',exact:true}).waitFor();
       assert.deepEqual(await host.locator('.bot-player h3').allTextContents(),botNames);
       assert.equal(await host.locator('.catalog article').count(),30);
       const prices = new Map(await host.locator('.catalog article').evaluateAll(nodes => nodes.map(node => [
@@ -56,8 +56,9 @@ try {
       // 실제 이미지 파일이 브라우저에서 정상적으로 표시되는지도 검사합니다.
       await host.locator('.catalog .product-photo').first().scrollIntoViewIfNeeded();
       await host.waitForFunction("(() => { const img = document.querySelector('.catalog .product-photo'); return img && img.complete && img.naturalWidth > 0; })()");
-      await host.locator('.source-details summary').first().click();
-      assert((await host.locator('.source-details').first().textContent())!.includes('2026-11-09'));
+      const fields=await host.locator('.catalog article').evaluateAll(nodes=>nodes.map(n=>[...n.children].map(child=>child.tagName)));
+      assert(fields.every(tags=>tags.join(',')==='IMG,H3,STRONG'),'카드는 사진·물품명·가격만 표시');
+      assert.equal(await host.locator('.catalog .source-details').count(),0);
       if(humans===1) {
         await host.screenshot({path:'tmp/browser/nara-catalog.png',fullPage:true});
         await host.setViewportSize({width:390,height:844});
@@ -104,7 +105,7 @@ try {
       await host.getByRole('button',{name:'방 닫고 메인으로',exact:true}).click();
       await host.getByRole('dialog').getByRole('button',{name:'방 닫기',exact:true}).click();
       for(const p of pages) await p.getByRole('heading',{name:'당신의 업체를 시작하세요',exact:true}).waitFor();
-      console.log(`PASS: ${publicUrl?'공개 서버':'로컬 빌드'} 사람 ${humans}명 + 봇 ${4-humans}명 · 준비/시작 · 봇 표시 · 새로고침 복원 · ${rounds}라운드${!publicUrl?'·최종 순위':''} · 방 종료`);
+      console.log(`PASS: ${publicUrl?'공개 서버':'로컬 빌드'} 사람 ${humans}명 + 봇 ${4-humans}명 · 준비/시작 · 봇 표시 · 새로고침 복원 · 사진/이름/가격 카탈로그 · ${rounds}라운드${!publicUrl?'·최종 순위':''} · 방 종료`);
     } finally { await Promise.all(contexts.map(c=>c.close())); }
   }
   assert.deepEqual(errors,[]);

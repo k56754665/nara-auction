@@ -27,6 +27,7 @@ export async function createApp(dev = false, options: GameOptions = {}) {
     io.to(id).emit('replaced'); io.sockets.sockets.get(id)?.disconnect(true);
   }, options, (id, event) => io.to(id).emit('roomExited', event));
   io.on('connection', socket => {
+    socket.emit('nicknameSuggested', game.suggestNickname(socket.id));
     socket.on('command', (command, ack) => {
       const reply = game.command(socket.id, command);
       if (typeof ack === 'function') ack(reply);

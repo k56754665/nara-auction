@@ -14,6 +14,7 @@ const browser = await chromium.launch({ channel: process.env.PW_CHANNEL ?? 'chro
 });
 const errors: string[] = [];
 const pages: Page[] = [];
+const defaultNicknames: string[] = [];
 const phase = async (label: string) => { await pages[0].locator('.room-stage strong').filter({ hasText: label }).waitFor(); };
 const expire = () => { const room = [...app.game.rooms.values()][0]; now = room.deadline!; app.game.tick(); };
 await mkdir('tmp/browser', {recursive:true});
@@ -42,11 +43,31 @@ try {
       };
     `});
     await page.goto(url);
+    await page.waitForFunction("document.querySelector('.entry-identity input')?.value.length > 0");
+    const suggested=await page.getByLabel('닉네임',{exact:true}).inputValue();
+    assert(suggested.length<=16);assert(!defaultNicknames.includes(suggested));defaultNicknames.push(suggested);
     await page.getByLabel('닉네임',{exact:true}).fill(name);
-    if (name === 'A') await page.getByRole('button',{name:'새 방 만들기',exact:true}).click();
+    if (name === 'A') {
+      const identity=await page.locator('.entry-identity').boundingBox();
+      const create=await page.locator('.entry-route-create').boundingBox();
+      const join=await page.locator('.entry-route-join').boundingBox();
+      assert(identity && create && join && identity.x<create.x && create.x<join.x);
+      await page.getByLabel('닉네임',{exact:true}).press('Enter');
+      await page.waitForTimeout(100);
+      assert.equal(app.game.rooms.size,0,'닉네임에서 Enter를 눌러도 방을 만들지 않음');
+      await page.screenshot({path:'tmp/browser/entry-choices.png',fullPage:true});
+      await page.getByRole('button',{name:'새 방 만들기',exact:true}).click();
+    }
     else {
       await page.getByLabel('방 코드',{exact:true}).fill([...app.game.rooms.keys()][0]);
-      await page.getByRole('button',{name:'코드로 참가',exact:true}).click();
+      if(name==='B') {
+        await page.getByLabel('닉네임',{exact:true}).fill('A');
+        await page.getByRole('button',{name:'코드로 참가',exact:true}).click();
+        await page.getByRole('alert').filter({hasText:'같은 닉네임'}).waitFor();
+        assert.equal(app.game.rooms.size,1);
+        await page.getByLabel('닉네임',{exact:true}).fill('B');
+        await page.getByLabel('방 코드',{exact:true}).press('Enter');
+      } else await page.getByRole('button',{name:'코드로 참가',exact:true}).click();
     }
     await page.getByRole('button',{name:'준비 완료',exact:true}).waitFor();
     await page.getByRole('button',{name:'준비 완료',exact:true}).click();
@@ -214,6 +235,10 @@ try {
   const mobile = await browser.newContext({viewport:{width:390,height:844}});
   const entry = await mobile.newPage(); await entry.goto(url);
   await entry.getByLabel('닉네임',{exact:true}).waitFor();
+  await entry.waitForFunction("document.querySelector('.entry-identity input')?.value.length > 0");
+  const mobileCreate=await entry.locator('.entry-route-create').boundingBox();
+  const mobileJoin=await entry.locator('.entry-route-join').boundingBox();
+  assert(mobileCreate && mobileJoin && mobileJoin.y<mobileCreate.y,'모바일에서는 코드 참가를 먼저 표시');
   await entry.screenshot({path:'tmp/browser/mobile-entry.png',fullPage:true});
   assert(await entry.evaluate<boolean>('document.documentElement.scrollWidth <= window.innerWidth'));
   assert.deepEqual(errors,[]);

@@ -53,7 +53,7 @@ try {
   await pages[1].locator('.players .mine small').filter({hasText:'SEAT 2'}).waitFor();
   await pages[1].getByRole('button',{name:'준비 완료',exact:true}).click();
   await pages[0].getByRole('button',{name:'게임 시작',exact:true}).click();
-  await pages[0].getByRole('heading',{name:'단가와 규격을 기억하세요',exact:true}).waitFor();
+  await pages[0].getByRole('heading',{name:'사진과 가격을 기억하세요',exact:true}).waitFor();
   await pages[0].getByRole('button',{name:'방 닫고 메인으로',exact:true}).click();
   await pages[0].getByRole('dialog').waitFor();
   await pages[0].screenshot({path:'tmp/browser/room-exit-confirm.png',fullPage:true});

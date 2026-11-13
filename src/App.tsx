@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { command, forgetSession, leaveRoom, submit, useConnection } from './connection';
+import { command, leaveRoom, submit, useConnection } from './connection';
 import type { Phase, ProductSource, RoomView, RoundResult } from '../shared/protocol';
 import { AuctionRoom } from './AuctionRoom';
 import { money } from './format';
+import { EntryScreen } from './EntryScreen';
 
 const titles: Record<Phase, string> = { lobby: '대기실', catalog: '물품 카탈로그', announcement: '입찰 공고', price: '가격 퀴즈', firstBid: '첫 입찰', rebid: '공개 재입찰', reviewChoice: '규격 심사 선택', reviewAnswer: '규격 퀴즈', result: '라운드 결과', finished: '최종 순위' };
 const nameOf = (s: RoomView, id: string | null) => s.players.find(p => p.id === id)?.nickname ?? '없음';
@@ -77,10 +78,9 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
   if (s.phase === 'lobby') return <><small>GET READY</small><h2>모두 준비되면 출발합니다</h2><p>초기 운영자금 3,000만 원으로 시작해 10라운드 동안 계약에 도전합니다.<br />가격 퀴즈 → 입찰 → 규격 심사를 통과하면 납품 수익을 얻습니다.</p>
     <div className="actions"><button disabled={disabled} onClick={() => void command({ type: 'ready', ready: !me.ready })}>{me.ready ? '준비 취소' : '준비 완료'}</button>
       {s.hostId === myId && <button className="dark" disabled={disabled || s.players.some(p => !p.ready || !p.connected)} onClick={() => void command({ type: 'start' })}>게임 시작</button>}</div><p className="muted">사람 {s.players.length}명 + 봇 {4-s.players.length}명으로 진행합니다. 참가한 사람 모두 준비하면 방장이 시작할 수 있습니다. 빈 자리는 시작할 때 봇으로 채웁니다.</p></>;
-  if (s.phase === 'catalog') return <><small>STUDY / 30 ITEMS</small><h2>단가와 규격을 기억하세요</h2><p>상품 풀 {s.contentInfo.poolSize}종에서 고른 30종입니다. 최대 15분 동안 열람하며, 이 중 10종이 출제됩니다.</p>
-    {s.contentInfo.priceBasis === 'registeredContractPrice' && <div className="callout">{s.contentInfo.referenceDate} 조회 등록 계약단가입니다. 부가세 포함이며 상품별 단위·인도조건을 함께 기억하세요. 실시간 가격이나 제조 원가가 아닙니다.</div>}
+  if (s.phase === 'catalog') return <><h2>사진과 가격을 기억하세요</h2><p>30개 물품 중 10개가 출제됩니다. 다 살펴봤다면 열람 완료를 눌러 주세요.</p>
     <label>물품 검색<input value={query} onChange={e => setQuery(e.target.value)} placeholder="물품명을 입력하세요" /></label>
-    <div className="catalog">{s.catalog.filter(i => `${i.name} ${i.specs} ${i.source?.productId ?? ''}`.includes(query)).map(i => <article key={i.id} data-item-id={i.id}><ProductPhoto src={i.imageUrl} alt={i.imageAlt} /><small>{i.category ?? i.id.toUpperCase()}</small><h3>{i.name}</h3><strong data-unit-price={i.unitPrice}>{money(i.unitPrice)} / {i.unit}</strong><p>{i.specs}</p>{i.source && <p>{i.source.delivery} · {i.source.vat}<br />물품식별번호 {i.source.productId}</p>}<small>{i.description}</small><SourceDetails source={i.source} /></article>)}</div>{next('열람 완료')}</>;
+    <div className="catalog">{s.catalog.filter(i => i.name.includes(query.trim())).map(i => <article key={i.id} data-item-id={i.id}><ProductPhoto src={i.imageUrl} alt={i.imageAlt} /><h3>{i.name}</h3><strong data-unit-price={i.unitPrice}>{money(i.unitPrice)} / {i.unit}</strong></article>)}</div>{next('열람 완료')}</>;
   if (s.phase === 'finished') {
     const winners = s.standings.filter(p => p.winner);
     return <><small>FINAL RESULTS / {s.totalRounds} ROUNDS</small><h2>{winners.length ? `${winners.map(p => nameOf(s,p.playerId)).join(' · ')} ${winners.length > 1 ? '공동 우승' : '우승'}` : '우승자 없음'}</h2>
@@ -110,8 +110,7 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
 }
 
 export function App() {
-  const { state, session, connected, error, notice, pending } = useConnection();
-  const [nickname, setNickname] = useState(''); const [code, setCode] = useState('');
+  const { state, session, connected, error, notice, pending, suggestedNickname } = useConnection();
   const [exitRoomCode, setExitRoomCode] = useState('');
   const me = state?.players.find(p => p.id === session?.playerId);
   const humanCount = state?.players.filter(p => !p.isBot).length ?? 0;
@@ -119,10 +118,7 @@ export function App() {
     {error && <p className="error" role="alert">{error}</p>}
     {notice && <p className="notice-message" role="status">{notice}</p>}
     {!connected && state && <p className="error">연결을 복구하고 있습니다. 서버의 제한시간은 계속 흐릅니다.</p>}
-    {!state || !me ? <section className="card entry"><small>1~4인 플레이 · 빈자리는 봇으로</small><h2>당신의 업체를 시작하세요</h2><p>혼자서도, 친구와 함께해도 시작할 수 있습니다.<br />가격 퀴즈와 입찰로 10번의 계약 기회에 도전하세요.</p>
-      <label>닉네임<input value={nickname} maxLength={16} onChange={e => setNickname(e.target.value)} placeholder="예: 나라상사" /></label><button disabled={!connected || !!session || !nickname.trim()} onClick={() => void command({ type: 'create', nickname })}>새 방 만들기</button>
-      <div className="divider">초대받은 방이 있나요?</div><label>방 코드<input value={code} maxLength={6} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="6자리 코드" /></label><button className="secondary" disabled={!connected || !!session || !nickname.trim() || code.length !== 6} onClick={() => void command({ type: 'join', nickname, code })}>코드로 참가</button>
-      {session && <button className="text" onClick={forgetSession}>복원 중단하고 새로 참가</button>}</section> : <>
+    {!state || !me ? <EntryScreen connected={connected} session={session} suggestedNickname={suggestedNickname} /> : <>
       <section className="room-bar"><div><small>ROOM CODE · 초대 코드</small><strong>{state.code}</strong></div><div className="room-stage"><small>{state.roundNumber ? `ROUND ${state.roundNumber} / ${state.totalRounds}` : `사람 ${humanCount}명 · 봇 ${4-humanCount}명${state.phase==='lobby'?' 예정':''}`}</small><strong>{titles[state.phase]}</strong></div><Countdown state={state} /><div className="room-actions"><button className="secondary" disabled={!connected || pending} onClick={() => setExitRoomCode(state.code)}>{state.hostId === me.id ? '방 닫고 메인으로' : '메인으로 나가기'}</button></div></section>
       {exitRoomCode === state.code && <ExitDialog host={state.hostId === me.id} inGame={state.phase !== 'lobby'} disabled={!connected || pending} onCancel={() => setExitRoomCode('')} onConfirm={() => { void leaveRoom().then(() => setExitRoomCode('')); }} />}
       <AuctionRoom state={state} myId={me.id} lot={state.tender && state.phase !== 'finished' ? <TenderNotice state={state} /> : null}>

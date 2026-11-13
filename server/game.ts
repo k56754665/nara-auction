@@ -36,6 +36,8 @@ function shuffled(ids: string[]) {
 }
 export class Game {
   readonly rooms = new Map<string, Room>();
+  private readonly nicknameSuggestions = new Map<string, string>();
+  private nextNicknameNumber = randomInt(1000, 10_000);
   readonly now: () => number;
   readonly durations: Durations;
   private readonly botDelayMs: number;
@@ -83,6 +85,21 @@ export class Game {
         firstBid: e?.firstBid ?? null, finalBid: e?.finalBid ?? null, acknowledged: room.acknowledged.has(player.id) }, rules: RULES,
     };
   }
+  suggestNickname(socketId: string) {
+    const reserved = this.nicknameSuggestions.get(socketId);
+    if (reserved) return reserved;
+    const used = new Set([...this.nicknameSuggestions.values(), ...[...this.rooms.values()].flatMap(room => room.players.map(p => p.nickname))]);
+    const adjectives = ['용감한', '느긋한', '씩씩한', '반짝이는', '재빠른', '든든한', '신나는', '꼼꼼한'];
+    const animals = ['수달', '여우', '고래', '참새', '토끼', '판다', '펭귄', '코알라'];
+    let nickname: string;
+    do {
+      const number = this.nextNicknameNumber;
+      this.nextNicknameNumber = number % 99_999_999 + 1;
+      nickname = `${adjectives[randomInt(adjectives.length)]}${animals[randomInt(animals.length)]}-${number.toString().padStart(4, '0')}`;
+    } while (used.has(nickname));
+    this.nicknameSuggestions.set(socketId, nickname);
+    return nickname;
+  }
   publish(room: Room) { for (const p of room.players) if (p.socketId) this.send(p.socketId, this.view(room, p)); }
   find(socketId: string) {
     for (const room of this.rooms.values()) { const player = room.players.find(p => p.socketId === socketId); if (player) return { room, player }; }
@@ -93,8 +110,9 @@ export class Game {
       if (!c || typeof c !== 'object') throw new Error('잘못된 요청입니다.');
       if (c.type === 'create' || c.type === 'join') {
         if (this.find(socketId)) throw new Error('이미 방에 참가 중입니다.');
-        const nickname = typeof c.nickname === 'string' ? c.nickname.trim() : '';
+        const nickname = typeof c.nickname === 'string' ? c.nickname.trim().normalize('NFC') : '';
         if (!nickname || nickname.length > 16) throw new Error('닉네임은 1~16자로 입력하세요.');
+        if ([...this.nicknameSuggestions].some(([id, name]) => id !== socketId && name === nickname)) throw new Error('이미 사용 중인 닉네임입니다. 다른 닉네임을 입력하세요.');
         let room: Room;
         if (c.type === 'create') {
           let code: string; do { code = randomBytes(3).toString('hex').toUpperCase(); } while (this.rooms.has(code));
@@ -112,6 +130,7 @@ export class Game {
           room = found;
           if (room.phase !== 'lobby') throw new Error('이미 시작된 경기입니다.');
           if (room.players.length >= 4) throw new Error('이미 4명이 참가했습니다.');
+          if (room.players.some(p => p.nickname === nickname)) throw new Error('이 방에 같은 닉네임이 있습니다. 다른 닉네임을 입력하세요.');
         }
         const player: Player = { id: randomUUID(), token: randomBytes(32).toString('hex'), socketId, isBot: false,
           seat: [1,2,3,4].find(seat => !room.players.some(p => p.seat === seat))!, nickname, connected: true, ready: false,
@@ -167,8 +186,11 @@ export class Game {
           if (player.id !== room.hostId) throw new Error('방장만 시작할 수 있습니다.');
           if (room.players.some(p => !p.ready || !p.connected)) throw new Error('참가한 사람이 모두 연결되어 준비해야 합니다.');
           for (const seat of [1,2,3,4]) if (!room.players.some(p => p.seat === seat)) {
+            const baseName = `입찰봇 ${seat}호`;
+            let nickname = baseName;
+            for (let suffix = 2; room.players.some(p => p.nickname === nickname); suffix++) nickname = `${baseName}-${suffix}`;
             room.players.push({ id: randomUUID(), token: randomBytes(32).toString('hex'), socketId: null,
-              seat, nickname: `입찰봇 ${seat}호`, isBot: true, connected: true, ready: true,
+              seat, nickname, isBot: true, connected: true, ready: true,
               funds: RULES.initialFunds, deliveries: 0, receipts: new Map() });
           }
           room.players.sort((a,b) => a.seat - b.seat);
@@ -320,6 +342,7 @@ export class Game {
   }
   tick() { for (const room of this.rooms.values()) { this.expire(room); this.runBots(room); } }
   disconnect(socketId: string) {
+    this.nicknameSuggestions.delete(socketId);
     const found = this.find(socketId); if (!found) return;
     found.player.socketId = null; found.player.connected = false; this.publish(found.room);
   }

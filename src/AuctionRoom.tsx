@@ -20,7 +20,7 @@ function announcement(state: RoomView, myId: string) {
       hint: `현재 사람 ${state.players.length}명입니다. 빈 ${4 - state.players.length}자리는 시작할 때 봇이 채웁니다.`,
     };
     case 'catalog': return {
-      line: '입찰 전에 상품의 단가와 규격을 살펴보세요. 이 중 10종이 공고로 나옵니다.',
+      line: '입찰 전에 상품의 사진과 가격을 살펴보세요. 이 중 10종이 공고로 나옵니다.',
       hint: '아래 카탈로그를 읽고 열람 완료를 눌러 주세요. 모두 확인하면 첫 공고를 공개합니다.',
     };
     case 'announcement': return {
@@ -105,7 +105,7 @@ function playerBubble(state: RoomView, player: PlayerView, myId: string) {
   const row = state.result?.rows.find(r => r.playerId === player.id);
   const base = { amount: null as number | null, raised: false, detail: '', label: '', mark: '' };
   if (state.phase === 'lobby') return { ...base, label: player.ready ? '준비 완료!' : '준비 중', detail: player.connected ? '모두 모이면 시작해요' : '연결을 기다립니다' };
-  if (state.phase === 'catalog') return { ...base, label: mine && state.me.acknowledged ? '열람 완료!' : '카탈로그 열람', detail: '단가와 규격을 기억해요' };
+  if (state.phase === 'catalog') return { ...base, label: mine && state.me.acknowledged ? '열람 완료!' : '카탈로그 열람', detail: '사진과 가격을 기억해요' };
   if (state.phase === 'announcement') return { ...base, label: '공고 확인 중', detail: `${state.roundNumber}번째 계약 기회` };
   if (state.phase === 'price') return { ...base,
     label: player.priceSubmitted ? mine ? state.me.guess === null ? '이번 라운드 건너뜀' : money(state.me.guess) : '답안 제출 완료' : '가격 고민 중…',

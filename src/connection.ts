@@ -8,8 +8,8 @@ function readSession(): Session | null {
 }
 let session = readSession();
 let sessionGeneration = 0;
-let snapshot: { state: RoomView | null; session: Session | null; connected: boolean; error: string; notice: string; pending: boolean } = {
-  state: null, session, connected: false, error: '', notice: '', pending: false,
+let snapshot: { state: RoomView | null; session: Session | null; connected: boolean; error: string; notice: string; pending: boolean; suggestedNickname: string } = {
+  state: null, session, connected: false, error: '', notice: '', pending: false, suggestedNickname: '',
 };
 const listeners = new Set<() => void>();
 function update(patch: Partial<typeof snapshot>) {
@@ -30,6 +30,7 @@ socket.on('connect', () => {
 socket.on('disconnect', () => update({ connected: false }));
 socket.on('connect_error', () => update({ connected: false, error: '서버에 연결할 수 없습니다. 자동으로 다시 연결합니다.' }));
 socket.on('state', state => update({ state }));
+socket.on('nicknameSuggested', suggestedNickname => update({ suggestedNickname }));
 socket.on('roomExited', event => {
   if (event.roomCode !== (session?.roomCode ?? snapshot.state?.code)) return;
   sessionGeneration++; session = null; sessionStorage.removeItem(key);
