@@ -5,6 +5,8 @@
 React + TypeScript + Vite 화면, Node.js + Socket.IO 서버를 한 프로젝트에서 관리합니다.
 실행 의존성은 React, React DOM, Socket.IO 서버/클라이언트 4개이며, 상태 관리·CSS·HTTP 서버는 기본 기능을 사용합니다.
 
+경기 화면은 진행자와 4개 업체가 함께 보이는 **무대형 경매장**입니다. 진행자가 단계·현재 차례·낙찰·유찰과 다음 행동을 말풍선으로 안내합니다. 업체는 입찰 제출 시 팻말을 들고 머리 위에 금액을 표시합니다. 첫 입찰의 다른 업체 금액은 마감까지 `입찰 완료`로 가리고, 공개 후에는 모든 화면에서 재입찰 금액이 갱신됩니다. 시스템의 동작 줄이기 설정에서는 애니메이션 없이 같은 상태를 표시합니다.
+
 ## 공개 게임 주소
 
 **[https://nara-auction.onrender.com](https://nara-auction.onrender.com)**
@@ -148,6 +150,9 @@ npm run build
 ```text
 src/
   App.tsx            단계별 화면, 입력, 결과와 기록
+  AuctionRoom.tsx    진행자 안내, 4개 업체 캐릭터·가격 말풍선·입찰 팻말
+  auction.css        무대형 배치, 팻말 애니메이션과 모바일·동작 줄이기 대응
+  format.ts         금액 표시
   connection.ts     단일 Socket.IO 연결·이벤트 구독·토큰·요청 처리
   style.css         일반 CSS와 모바일 대응
 shared/
@@ -224,6 +229,7 @@ npm run test:browser:bots -- https://nara-auction.onrender.com
 - npm run typecheck, npm run build: 통과. 생성한 서버 전용 JSON과 상품 사진이 프로덕션 빌드에 각각 올바른 위치로 복사됩니다.
 - npm run test:browser:bots: **실제 상품 데이터**로 독립 Chrome 세션에서 사람 1·2·3·4명 각각 봇과 함께 **10라운드·최종 순위까지 완주**했습니다. 준비·봇 표시·새로고침 복원·사진 표시·출처 펼침·방 종료를 확인했습니다. 모바일 390px에서 페이지 가로 넘침이 없음을 확인했습니다.
 - npm run test:browser: 독립 Chrome 4세션으로 PDF 예시 → 전체 10라운드 → 최종 순위, 가격·비공개 입찰·최종 순위 새로고침 복원을 확인했습니다. 이 회귀 검증은 고정 예시를 명시적으로 주입합니다.
+- 무대형 화면: 다른 참가자에게 첫 입찰 금액이 표시되지 않는 것, 제출 시 팻말 들기, 공개 재입찰 후 4개 화면의 가격 갱신, 후순위 도전 안내, 전원 가격 실패 시 비용 없는 유찰·다음 공고 안내를 확인했습니다. 320px 가로 넘침 없음과 동작 줄이기 설정도 검사했습니다. 화면 PNG는 `tmp/browser/auction-stage.png`, `auction-stage-mobile.png`, `auction-sealed-bid.png`, `auction-no-qualifiers.png`에 생성합니다.
 - npm run test:browser:exit: 4세션으로 나가기·빈 좌석 재참가·경기 중 방 닫기·전원 메인 복귀·토큰 삭제·새 방 생성을 확인했습니다.
 - 브라우저 검증에서 JavaScript 실행 오류 없음. 데스크톱·모바일 상품 카탈로그 PNG는 tmp/browser/nara-catalog.png와 tmp/browser/nara-mobile.png에 생성합니다.
 - 공개 배포는 GitHub main push → Render 자동 테스트·빌드 → Live 순서입니다. 위 공개 검증 명령은 실제 서버의 임의 상품을 카탈로그에서 읽어 가격·규격을 풀며, 현재 데이터의 자금 수식을 검사합니다. 테스트 종료 시 만든 방을 닫습니다.

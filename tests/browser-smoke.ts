@@ -37,6 +37,8 @@ try {
   await pages[0].screenshot({path:'tmp/browser/catalog.png',fullPage:true});
   for (const p of pages) await p.getByRole('button',{name:'열람 완료',exact:true}).click();
   await phase('입찰 공고'); expire(); await phase('가격 퀴즈');
+  assert.equal(await pages[0].locator('.auction-player').count(), 4);
+  assert((await pages[0].locator('.auction-host-line').textContent())!.includes('단가는 얼마'));
   await pages[0].getByLabel('예상 단가 (원)',{exact:true}).fill('970000');
   await pages[0].getByRole('button',{name:'확정 제출',exact:true}).click();
   await pages[0].reload(); await pages[0].getByText('제출 완료: 970,000원',{exact:false}).waitFor();
@@ -46,15 +48,29 @@ try {
   }
   await phase('첫 입찰');
   await pages[0].getByLabel('첫 입찰가 (원)',{exact:true}).fill('22000000');
-  await pages[0].getByRole('button',{name:'확정 제출',exact:true}).click();
+  await pages[0].getByRole('button',{name:'팻말 들고 입찰',exact:true}).click();
+  await pages[0].locator('[data-seat="1"] .is-raised .auction-paddle').waitFor();
+  await pages[1].locator('[data-seat="1"] .bid-bubble strong').filter({hasText:'입찰 완료'}).waitFor();
+  assert(!(await pages[1].locator('.auction-host-speech').textContent())!.includes('22,000,000'));
+  await pages[1].screenshot({path:'tmp/browser/auction-sealed-bid.png',fullPage:true,animations:'disabled'});
   await pages[0].reload(); await pages[0].getByText('제출 완료: 22,000,000원',{exact:false}).waitFor();
   assert.equal(await pages[1].locator('body').getByText('22,000,000원',{exact:true}).count(),0);
   await pages[0].screenshot({path:'tmp/browser/first-bid-restored.png',fullPage:true});
   for (const [i,amount] of [[1,21_900_000],[3,22_700_000]]) {
     await pages[i].getByLabel('첫 입찰가 (원)',{exact:true}).fill(String(amount));
-    await pages[i].getByRole('button',{name:'확정 제출',exact:true}).click();
+    await pages[i].getByRole('button',{name:'팻말 들고 입찰',exact:true}).click();
   }
   await phase('공개 재입찰');
+  await pages[1].locator('[data-seat="1"] .bid-bubble strong').filter({hasText:'22,000,000원'}).waitFor();
+  assert((await pages[0].locator('.auction-host-line').textContent())!.includes('21,900,000원'));
+  await pages[0].screenshot({path:'tmp/browser/auction-stage.png',fullPage:true,animations:'disabled'});
+  await pages[0].emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await pages[0].evaluate<string>(`getComputedStyle(document.querySelector('[data-seat="1"] .auction-paddle')).animationName`),'none');
+  await pages[0].setViewportSize({width:320,height:844});
+  assert(await pages[0].evaluate<boolean>('document.documentElement.scrollWidth <= window.innerWidth'));
+  await pages[0].screenshot({path:'tmp/browser/auction-stage-mobile.png',fullPage:true});
+  await pages[0].setViewportSize({width:1360,height:960});
+  await pages[0].emulateMedia({reducedMotion:'no-preference'});
   await pages[0].getByRole('button',{name:'기존 입찰가 유지',exact:true}).click();
   await pages[3].getByRole('button',{name:'기존 입찰가 유지',exact:true}).click();
   await pages[1].getByRole('button',{name:'2 메모리 8GB / SSD 512GB',exact:true}).click();
@@ -79,8 +95,23 @@ try {
     }
     await phase('첫 입찰');
     await pages[0].getByLabel('첫 입찰가 (원)',{exact:true}).fill(String(t.budget));
-    await pages[0].getByRole('button',{name:'확정 제출',exact:true}).click();
-    for (const p of pages.slice(1)) await p.getByRole('button',{name:'입찰 포기',exact:true}).click();
+    await pages[0].getByRole('button',{name:'팻말 들고 입찰',exact:true}).click();
+    if(round===1) {
+      await pages[1].getByLabel('첫 입찰가 (원)',{exact:true}).fill(String(t.budget));
+      await pages[1].getByRole('button',{name:'팻말 들고 입찰',exact:true}).click();
+      for(const p of pages.slice(2)) await p.getByRole('button',{name:'입찰 포기',exact:true}).click();
+      await phase('공개 재입찰');
+      await pages[1].getByLabel('재입찰가 (원)',{exact:true}).fill(String(t.budget-100_000));
+      await pages[1].getByRole('button',{name:'팻말 들고 재입찰',exact:true}).click();
+      for(const p of pages) await p.locator('[data-seat="2"] .bid-bubble').filter({hasText:'7,900,000원'}).waitFor();
+      assert.equal(await pages[0].evaluate<string>(`getComputedStyle(document.querySelector('[data-seat="2"] .auction-paddle')).animationName`),'paddle-raise');
+      await phase('규격 퀴즈');
+      const wrong=t.choices.findIndex(c=>c.id!==t.answerId);
+      await pages[1].getByRole('button',{name:`${wrong+1} ${t.choices[wrong].label}`,exact:true}).click();
+      await phase('규격 심사 선택');
+      assert((await pages[0].locator('.auction-host-line').textContent())!.includes('도전하시겠습니까'));
+      await pages[0].getByRole('button',{name:'규격 심사 도전',exact:true}).click();
+    } else for (const p of pages.slice(1)) await p.getByRole('button',{name:'입찰 포기',exact:true}).click();
     await phase('규격 퀴즈');
     const correctIndex=t.choices.findIndex(c=>c.id===t.answerId);
     await pages[0].getByRole('button',{name:`${correctIndex+1} ${t.choices[correctIndex].label}`,exact:true}).click();
@@ -95,11 +126,38 @@ try {
   assert.equal(final.players[0].funds,67_000_000); assert.equal(final.players[0].deliveries,10);
   assert.equal(await pages[0].locator('.history details').count(),10);
   await pages[0].screenshot({path:'tmp/browser/final-ranking.png',fullPage:true});
+  // 새 방에서 전원 가격 실패 시 진행자가 유찰과 다음 공고를 안내합니다.
+  await pages[0].getByRole('button',{name:'방 닫고 메인으로',exact:true}).click();
+  await pages[0].getByRole('dialog').getByRole('button',{name:'방 닫기',exact:true}).click();
+  for(const [i,p] of pages.entries()) {
+    await p.getByRole('heading',{name:'당신의 업체를 시작하세요',exact:true}).waitFor();
+    await p.getByLabel('닉네임',{exact:true}).fill(['A','B','C','D'][i]);
+    if(i===0) await p.getByRole('button',{name:'새 방 만들기',exact:true}).click();
+    else {
+      await p.getByLabel('방 코드',{exact:true}).fill([...app.game.rooms.keys()][0]);
+      await p.getByRole('button',{name:'코드로 참가',exact:true}).click();
+    }
+    await p.getByRole('button',{name:'준비 완료',exact:true}).click();
+  }
+  await pages[0].getByRole('button',{name:'게임 시작',exact:true}).click();
+  for(const p of pages) await p.getByRole('button',{name:'열람 완료',exact:true}).click();
+  await phase('입찰 공고'); expire(); await phase('가격 퀴즈');
+  for(const p of pages) {
+    await p.getByLabel('예상 단가 (원)',{exact:true}).fill('0');
+    await p.getByRole('button',{name:'확정 제출',exact:true}).click();
+  }
+  await phase('라운드 결과');
+  assert((await pages[0].locator('.auction-host-line').textContent())!.includes('유찰'));
+  assert((await pages[0].locator('.auction-host-hint').textContent())!.includes('자금 차감은 없습니다'));
+  assert((await pages[0].locator('.auction-host-hint').textContent())!.includes('다음 공고'));
+  await pages[0].screenshot({path:'tmp/browser/auction-no-qualifiers.png',fullPage:true});
+  for(const p of pages) await p.getByRole('button',{name:'다음 라운드 준비',exact:true}).click();
+  await phase('입찰 공고');
   const mobile = await browser.newContext({viewport:{width:390,height:844}});
   const entry = await mobile.newPage(); await entry.goto(url);
   await entry.getByLabel('닉네임',{exact:true}).waitFor();
   await entry.screenshot({path:'tmp/browser/mobile-entry.png',fullPage:true});
   assert(await entry.evaluate<boolean>('document.documentElement.scrollWidth <= window.innerWidth'));
   assert.deepEqual(errors,[]);
-  console.log('PASS: 독립된 Chrome 4개 컨텍스트, 대기실→10라운드→최종 우승, 가격/비공개 입찰/최종 순위 새로고침 복원, PDF 예시 정산, 모바일 너비, JS 오류 없음');
+  console.log('PASS: Chrome 4세션 10라운드, 진행자 단계/유찰 안내, 비공개/공개 가격 말풍선, 팻말·재입찰 갱신, 재접속, PDF 정산, 320px·모션 감소, JS 오류 없음');
 } finally { await browser.close(); await app.close(); }

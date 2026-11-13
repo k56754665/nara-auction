@@ -77,7 +77,7 @@ try {
         if(humans===4) {
           await host.getByLabel('첫 입찰가 (원)',{exact:true}).waitFor();
           await host.getByLabel('첫 입찰가 (원)',{exact:true}).fill((await host.locator('.notice').getAttribute('data-budget'))!);
-          await host.getByRole('button',{name:'확정 제출',exact:true}).click();
+          await host.getByRole('button',{name:'팻말 들고 입찰',exact:true}).click();
         }
         for(const p of humans===4 ? pages.slice(1) : pages) await p.getByRole('button',{name:'입찰 포기',exact:true}).click();
         if(humans===4) {

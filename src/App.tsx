@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { command, forgetSession, leaveRoom, submit, useConnection } from './connection';
-import type { Phase, PlayerView, ProductSource, RoomView, RoundResult } from '../shared/protocol';
+import type { Phase, ProductSource, RoomView, RoundResult } from '../shared/protocol';
+import { AuctionRoom } from './AuctionRoom';
+import { money } from './format';
 
-export const money = (v: number) => `${v.toLocaleString('ko-KR')}원`;
 const titles: Record<Phase, string> = { lobby: '대기실', catalog: '물품 카탈로그', announcement: '입찰 공고', price: '가격 퀴즈', firstBid: '첫 입찰', rebid: '공개 재입찰', reviewChoice: '규격 심사 선택', reviewAnswer: '규격 퀴즈', result: '라운드 결과', finished: '최종 순위' };
-const steps: Phase[] = ['announcement','price','firstBid','rebid','reviewAnswer','result'];
 const nameOf = (s: RoomView, id: string | null) => s.players.find(p => p.id === id)?.nickname ?? '없음';
 function ProductPhoto({ src, alt }: { src?: string; alt?: string }) {
   return src ? <img className="product-photo" src={src} alt={alt ?? '등록 상품 사진'} loading="lazy" /> : null;
@@ -16,13 +16,15 @@ function SourceDetails({ source: s }: { source?: ProductSource }) {
     <a href={s.sourceUrl} target="_blank" rel="noreferrer">조달청 품목정보 API 출처</a> · <a href={s.imageSourceUrl} target="_blank" rel="noreferrer">등록 사진 원본</a>
   </details> : null;
 }
-function playerStatus(p: PlayerView, s: RoomView) {
-  if (!p.connected) return '연결 끊김';
-  if (s.phase === 'lobby') return p.ready ? '준비 완료' : '준비 중';
-  if (s.phase === 'price') return p.priceSubmitted ? '제출 완료' : '답안 작성 중';
-  if (s.phase === 'firstBid') return !p.eligible ? '자격 없음' : p.bidSubmitted ? '입찰 완료' : '입찰 중';
-  if (s.activeId === p.id) return '현재 차례';
-  return p.isBot ? '자동 플레이' : '연결됨';
+function TenderNotice({ state: s }: { state: RoomView }) {
+  const t = s.tender;
+  if (!t || s.phase === 'finished') return null;
+  return <section className="notice auction-lot" data-item-id={t.itemId} data-budget={t.budget} aria-label="이번 입찰 공고">
+    <div className="auction-lot-heading"><ProductPhoto src={t.imageUrl} alt={t.imageAlt} /><div><small>{t.agency} · 공고 {s.roundNumber.toString().padStart(2, '0')}</small><h2>{t.name}</h2><p>{t.quantity.toLocaleString('ko-KR')}{t.unit} 납품</p></div></div>
+    <div className="auction-lot-totals"><div><small>배정예산</small><strong>{money(t.budget)}</strong></div><div><small>게임상 총 납품원가</small><strong>{s.cost === null ? '가격 퀴즈 후 공개' : money(s.cost)}</strong></div></div>
+    {s.unitPrice !== null && <p className="auction-unit-price">{t.source ? '등록 계약단가' : '기준 단가'} <strong>{money(s.unitPrice)} / {t.unit}</strong></p>}
+    <details className="auction-lot-details"><summary>필수 규격·등록 정보 보기</summary><dl><div><dt>배정예산</dt><dd>{money(t.budget)}</dd></div><div><dt>필수 규격</dt><dd>{t.specs}</dd></div>{t.source && <div><dt>등록 조건</dt><dd>물품식별번호 {t.source.productId}<br />{t.source.delivery} · {t.source.vat}</dd></div>}</dl><SourceDetails source={t.source} />{t.source && <small>공고 기관·수량·예산은 게임용입니다. 등록 계약단가 × 수량을 게임상 원가로 사용합니다.</small>}</details>
+  </section>;
 }
 
 function Countdown({ state }: { state: RoomView }) {
@@ -36,13 +38,13 @@ function Countdown({ state }: { state: RoomView }) {
   return <div className={`timer ${remaining <= 5 ? 'urgent' : ''}`} role="timer" aria-label="남은 시간"><small>남은 시간</small><strong>{Math.floor(remaining / 60).toString().padStart(2,'0')}:{(remaining % 60).toString().padStart(2,'0')}</strong></div>;
 }
 
-function MoneyInput({ label, onSubmit, disabled, step = 1 }: { label: string; onSubmit: (value: number) => void; disabled: boolean; step?: number }) {
+function MoneyInput({ label, onSubmit, disabled, step = 1, submitLabel = '확정 제출' }: { label: string; onSubmit: (value: number) => void; disabled: boolean; step?: number; submitLabel?: string }) {
   const [value, setValue] = useState('');
   const n = Number(value);
   return <form onSubmit={e => { e.preventDefault(); if (value !== '' && Number.isSafeInteger(n)) onSubmit(n); }}>
     <label>{label}<input aria-label={label} type="number" inputMode="numeric" min={0} step={step} value={value} onChange={e => setValue(e.target.value)} placeholder={step === 1 ? '예: 1000000' : '예: 22000000'} disabled={disabled} /></label>
     <div className="input-hint">{value && Number.isFinite(n) ? money(n) : '모든 금액은 원 단위로 입력합니다.'}</div>
-    <button disabled={disabled || !value || !Number.isSafeInteger(n)}>확정 제출</button>
+    <button disabled={disabled || !value || !Number.isSafeInteger(n)}>{submitLabel}</button>
   </form>;
 }
 
@@ -86,19 +88,18 @@ function Stage({ state: s, myId, disabled, onExit }: { state: RoomView; myId: st
       <button disabled={disabled} onClick={onExit}>{s.hostId === myId ? '방 닫고 새 경기로' : '메인으로 돌아가기'}</button></>;
   }
   if (!t) return null;
-  const tender = <div className="notice" data-item-id={t.itemId} data-budget={t.budget}><ProductPhoto src={t.imageUrl} alt={t.imageAlt} /><div><small>{t.agency} · 공고 {s.roundNumber.toString().padStart(2,'0')}{t.source && ' · 게임용 발주'}</small><h2>{t.name} {t.quantity}{t.unit} 납품</h2></div><dl><div><dt>배정예산</dt><dd>{money(t.budget)}</dd></div><div><dt>필수 규격</dt><dd>{t.specs}</dd></div>{t.source && <div><dt>등록 조건</dt><dd>물품식별번호 {t.source.productId}<br />{t.source.delivery} · {t.source.vat}</dd></div>}{s.cost !== null && <><div><dt>{t.source ? '등록 계약단가' : '기준 단가'}</dt><dd>{money(s.unitPrice!)} / {t.unit}</dd></div><div><dt>게임상 총 납품원가</dt><dd>{money(s.cost)}</dd></div></>}</dl><SourceDetails source={t.source} />{t.source && <small>공고 기관·수량·예산은 게임용입니다. 등록 계약단가 × 수량을 게임상 원가로 사용합니다.</small>}</div>;
-  if (s.phase === 'announcement') return <>{tender}<div className="callout">잠시 후 가격 퀴즈가 시작됩니다. {t.unit}당 기준 단가를 맞혀주세요.</div></>;
-  if (s.phase === 'price') return <>{tender}<h3>{t.unit}당 기준 단가는 얼마일까요?</h3><p>정수 원 단위로 한 번 제출합니다. 기준 단가의 ±{s.rules.tolerancePercent}% 이내면 입찰 자격을 얻습니다.</p>
-    {s.me.priceSubmitted ? <div className="callout">제출 완료: {s.me.guess === null ? '이번 라운드 건너뜀' : money(s.me.guess)}<br /><small>다른 업체의 제출 또는 마감을 기다립니다.</small></div> : <><MoneyInput label="예상 단가 (원)" disabled={disabled} onSubmit={amount => act({ kind: 'price', amount })} /><button className="text" disabled={disabled} onClick={() => act({ kind: 'price', amount: null })}>이번 라운드 건너뛰기</button></>}</>;
+  if (s.phase === 'announcement') return <><div className="callout">잠시 후 가격 퀴즈가 시작됩니다. {t.unit}당 기준 단가를 맞혀주세요.</div></>;
+  if (s.phase === 'price') return <div className="auction-bid-actions"><div><h3>{t.unit}당 기준 단가는 얼마일까요?</h3><p>정수 원 단위로 한 번 제출합니다. 기준 단가의 ±{s.rules.tolerancePercent}% 이내면 입찰 자격을 얻습니다.</p></div><div>
+    {s.me.priceSubmitted ? <div className="callout">제출 완료: {s.me.guess === null ? '이번 라운드 건너뜀' : money(s.me.guess)}<br /><small>다른 업체의 제출 또는 마감을 기다립니다.</small></div> : <><MoneyInput label="예상 단가 (원)" disabled={disabled} onSubmit={amount => act({ kind: 'price', amount })} /><button className="text" disabled={disabled} onClick={() => act({ kind: 'price', amount: null })}>이번 라운드 건너뛰기</button></>}</div></div>;
   if (s.phase === 'firstBid') {
     const funded = me.funds >= Math.max(s.cost!, s.fee!);
-    return <>{tender}<h3>첫 입찰 · 마감 전까지 비공개</h3><p>납품원가 이상, 예산 이하의 {money(s.rules.bidStep)} 단위 금액만 허용합니다.<br />운영자금은 원가와 심사 실패 비용 중 큰 금액 이상이어야 합니다.</p>
+    return <div className="auction-bid-actions"><div><h3>첫 입찰 · 마감 전까지 비공개</h3><p>납품원가 이상, 예산 이하의 {money(s.rules.bidStep)} 단위 금액만 허용합니다.<br />운영자금은 원가와 심사 실패 비용 중 큰 금액 이상이어야 합니다.</p></div><div>
       {!s.me.eligible ? <div className="callout">가격 퀴즈 자격을 얻지 못했습니다. 다른 업체의 입찰을 기다립니다.</div> : s.me.bidSubmitted ? <div className="callout">제출 완료: {s.me.firstBid === null ? '입찰 포기' : money(s.me.firstBid)}<br /><small>본인의 제출 내용입니다. 마감 전에는 다른 업체에 전송되지 않습니다.</small></div> : <>
-        {!funded && <p className="error">운영자금이 부족해 이번 입찰에 참여할 수 없습니다.</p>}<MoneyInput label="첫 입찰가 (원)" step={s.rules.bidStep} disabled={disabled || !funded} onSubmit={amount => act({ kind: 'bid', amount })} /><button className="text" disabled={disabled} onClick={() => act({ kind: 'bid', amount: null })}>입찰 포기</button></>}</>;
+        {!funded && <p className="error">운영자금이 부족해 이번 입찰에 참여할 수 없습니다.</p>}<MoneyInput label="첫 입찰가 (원)" submitLabel="팻말 들고 입찰" step={s.rules.bidStep} disabled={disabled || !funded} onSubmit={amount => act({ kind: 'bid', amount })} /><button className="text" disabled={disabled} onClick={() => act({ kind: 'bid', amount: null })}>입찰 포기</button></>}</div></div>;
   }
-  if (s.phase === 'rebid') return <>{tender}<div className="lowest"><small>현재 최저가</small><strong>{money(s.lowestBid!)}</strong></div><h3>{mine ? '내 재입찰 차례입니다' : `${nameOf(s,s.activeId)} 재입찰 중`}</h3><p>좌석 순으로 한 번씩 기회가 주어집니다. 현재 1위는 자동으로 건너뜁니다.<br />현재 최저가보다 최소 {money(s.rules.bidStep)} 낮아야 합니다. 포기·시간 초과는 기존 입찰가를 유지합니다.</p>
-    {mine ? <><MoneyInput label="재입찰가 (원)" step={s.rules.bidStep} disabled={disabled || s.lowestBid! - s.rules.bidStep < s.cost!} onSubmit={amount => act({ kind: 'rebid', amount })} /><button className="secondary" disabled={disabled} onClick={() => act({ kind: 'rebid', amount: null })}>기존 입찰가 유지</button></> : <div className="callout">다른 업체의 차례입니다. 현재 내 최종 입찰: {s.me.finalBid === null ? '미입찰' : money(s.me.finalBid)}</div>}</>;
-  if (s.phase === 'reviewChoice' || s.phase === 'reviewAnswer') return <>{tender}<h3>{mine ? '내 규격 심사 차례입니다' : `${nameOf(s,s.activeId)} 규격 심사 중`}</h3><p>정답이면 자신의 최종 입찰가로 계약합니다. 오답·답안 시간 초과 시 <strong>{money(s.fee!)}</strong>이 차감됩니다.</p>
+  if (s.phase === 'rebid') return <div className="auction-bid-actions"><div><h3>{mine ? '내 재입찰 차례입니다' : `${nameOf(s,s.activeId)} 재입찰 중`}</h3><p>현재 최저가 <strong>{money(s.lowestBid!)}</strong><br />최소 {money(s.rules.bidStep)} 낮게 제시하세요. 포기·시간 초과는 기존 입찰가를 유지합니다.</p></div><div>
+    {mine ? <><MoneyInput label="재입찰가 (원)" submitLabel="팻말 들고 재입찰" step={s.rules.bidStep} disabled={disabled || s.lowestBid! - s.rules.bidStep < s.cost!} onSubmit={amount => act({ kind: 'rebid', amount })} /><button className="secondary" disabled={disabled} onClick={() => act({ kind: 'rebid', amount: null })}>기존 입찰가 유지</button></> : <div className="callout">다른 업체의 차례입니다. 현재 내 최종 입찰: {s.me.finalBid === null ? '미입찰' : money(s.me.finalBid)}</div>}</div></div>;
+  if (s.phase === 'reviewChoice' || s.phase === 'reviewAnswer') return <><h3>{mine ? '내 규격 심사 차례입니다' : `${nameOf(s,s.activeId)} 규격 심사 중`}</h3><p>정답이면 자신의 최종 입찰가로 계약합니다. 오답·답안 시간 초과 시 <strong>{money(s.fee!)}</strong>이 차감됩니다.</p>
     {!mine ? <div className="callout">심사 결과를 기다립니다.</div> : s.phase === 'reviewChoice' ? <><p>후순위 후보입니다. 도전하시겠습니까? 선택 시간 초과는 비용 없이 포기합니다.</p><div className="actions"><button disabled={disabled} onClick={() => act({ kind: 'challenge', accept: true })}>규격 심사 도전</button><button className="secondary" disabled={disabled} onClick={() => act({ kind: 'challenge', accept: false })}>심사 포기</button></div></> : <><p>{t.question}</p><div className="choices">{t.choices.map((c,i) => <button className="secondary" key={c.id} data-product-id={c.productId} disabled={disabled} onClick={() => act({ kind: 'answer', choiceId: c.id })}><span>{i+1}</span><div><ProductPhoto src={c.imageUrl} /><div>{c.label}</div>{c.productId && <small>물품식별번호 {c.productId}</small>}</div></button>)}</div><small>보기를 누르면 즉시 확정 제출됩니다.</small></>}</>;
   const result = s.result!;
   return <><small>ROUND {s.roundNumber} RESULT</small><h2>{result.winnerId ? `${nameOf(s,result.winnerId)} 낙찰` : '유찰'}</h2><p>{result.reason}</p>
@@ -114,8 +115,7 @@ export function App() {
   const [exitRoomCode, setExitRoomCode] = useState('');
   const me = state?.players.find(p => p.id === session?.playerId);
   const humanCount = state?.players.filter(p => !p.isBot).length ?? 0;
-  const active = state?.activeId === me?.id && !!me;
-  return <main><header><div><small>NARA AUCTION / 1~4 PLAYERS + BOTS</small><h1>나라입찰<span>가격을 읽고, 계약을 따내다.</span></h1></div><span className={`badge ${connected ? 'online' : ''}`}>{connected ? '● 서버 연결됨' : '○ 연결 복구 중'}</span></header>
+  return <main className={state && me ? 'room-page' : undefined}><header><div><small>NARA AUCTION / 1~4 PLAYERS + BOTS</small><h1>나라입찰<span>가격을 읽고, 계약을 따내다.</span></h1></div><span className={`badge ${connected ? 'online' : ''}`}>{connected ? '● 서버 연결됨' : '○ 연결 복구 중'}</span></header>
     {error && <p className="error" role="alert">{error}</p>}
     {notice && <p className="notice-message" role="status">{notice}</p>}
     {!connected && state && <p className="error">연결을 복구하고 있습니다. 서버의 제한시간은 계속 흐릅니다.</p>}
@@ -123,15 +123,15 @@ export function App() {
       <label>닉네임<input value={nickname} maxLength={16} onChange={e => setNickname(e.target.value)} placeholder="예: 나라상사" /></label><button disabled={!connected || !!session || !nickname.trim()} onClick={() => void command({ type: 'create', nickname })}>새 방 만들기</button>
       <div className="divider">초대받은 방이 있나요?</div><label>방 코드<input value={code} maxLength={6} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="6자리 코드" /></label><button className="secondary" disabled={!connected || !!session || !nickname.trim() || code.length !== 6} onClick={() => void command({ type: 'join', nickname, code })}>코드로 참가</button>
       {session && <button className="text" onClick={forgetSession}>복원 중단하고 새로 참가</button>}</section> : <>
-      <section className="room-bar"><div><small>ROOM CODE · 친구에게 공유하세요</small><strong>{state.code}</strong></div><div className="room-stage"><small>{state.roundNumber ? `ROUND ${state.roundNumber} / ${state.totalRounds}` : `사람 ${humanCount}명 · 봇 ${4-humanCount}명${state.phase==='lobby'?' 예정':''}`}</small><strong>{titles[state.phase]}</strong></div><Countdown state={state} /></section>
-      <div className="room-actions"><button className="secondary" disabled={!connected || pending} onClick={() => setExitRoomCode(state.code)}>{state.hostId === me.id ? '방 닫고 메인으로' : '메인으로 나가기'}</button></div>
+      <section className="room-bar"><div><small>ROOM CODE · 초대 코드</small><strong>{state.code}</strong></div><div className="room-stage"><small>{state.roundNumber ? `ROUND ${state.roundNumber} / ${state.totalRounds}` : `사람 ${humanCount}명 · 봇 ${4-humanCount}명${state.phase==='lobby'?' 예정':''}`}</small><strong>{titles[state.phase]}</strong></div><Countdown state={state} /><div className="room-actions"><button className="secondary" disabled={!connected || pending} onClick={() => setExitRoomCode(state.code)}>{state.hostId === me.id ? '방 닫고 메인으로' : '메인으로 나가기'}</button></div></section>
       {exitRoomCode === state.code && <ExitDialog host={state.hostId === me.id} inGame={state.phase !== 'lobby'} disabled={!connected || pending} onCancel={() => setExitRoomCode('')} onConfirm={() => { void leaveRoom().then(() => setExitRoomCode('')); }} />}
-      <div className="players">{state.players.map(p => <article className={`card ${p.isBot ? 'bot-player' : ''} ${p.id === me.id ? 'mine' : ''} ${p.id === state.activeId ? 'active-player' : ''}`} key={p.id}><small>SEAT {p.seat} {p.isBot ? '· 봇' : ''} {p.id === me.id ? '· 나' : ''} {p.id === state.hostId ? '· 방장' : ''}</small><h3>{p.nickname}</h3><p>{money(p.funds)}</p><div className="player-bottom"><span>납품 {p.deliveries}건</span><span>{playerStatus(p,state)}</span></div></article>)}{[1,2,3,4].filter(seat => !state.players.some(p => p.seat === seat)).map(seat => <article className="card empty" key={`empty-${seat}`}><small>SEAT {seat}</small><h3>빈 자리 · 봇 예정</h3><p>친구가 참가하거나 시작할 때 봇으로 채웁니다.</p></article>)}</div>
-      {state.roundNumber > 0 && state.phase !== 'finished' && <nav className="steps">{steps.map((p,i) => <span className={state.phase === p || state.phase === 'reviewChoice' && p === 'reviewAnswer' ? 'current' : ''} key={p}>{i+1}. {titles[p]}</span>)}</nav>}
-      <div className="game-layout"><section className={`card stage ${active ? 'my-turn' : ''}`} aria-live="polite">{active && <div className="turn-label">지금 내 차례입니다</div>}{pending && <p className="muted">서버 확인 중…</p>}<Stage key={state.phaseId} state={state} myId={me.id} disabled={!connected || pending} onExit={() => setExitRoomCode(state.code)} /></section>
-        <aside><section className="card"><small>MY COMPANY</small><h3>{me.nickname}</h3><p className="funds">{money(me.funds)}</p><p>누적 납품 <strong>{me.deliveries}건</strong></p><hr /><small>게임 규칙</small><p className="muted">가격 오차 ±{state.rules.tolerancePercent}% 이내<br />입찰 단위 {money(state.rules.bidStep)}<br />심사 실패 비용 예산의 {state.rules.failurePercent}%<br />납품 1건 이상이어야 우승 가능</p></section>
-          {state.bids.length > 0 && <section className="card"><small>공개 입찰 순위</small><ol className="bid-list">{state.bids.map(b => <li key={b.playerId}><span>{nameOf(state,b.playerId)}</span><strong>{money(b.amount)}</strong></li>)}</ol></section>}
-          {state.lotteryOrder.length > 0 && <section className="card"><small>이번 라운드 추첨 순서</small><p className="muted">{state.lotteryOrder.map(id => nameOf(state,id)).join(' → ')}</p><small>동일 입찰가·동일 가격 오차일 때 적용</small></section>}</aside></div>
+      <AuctionRoom state={state} myId={me.id} lot={state.tender && state.phase !== 'finished' ? <TenderNotice state={state} /> : null}>
+        {pending && <p className="muted" role="status">서버 확인 중…</p>}
+        <Stage key={state.phaseId} state={state} myId={me.id} disabled={!connected || pending} onExit={() => setExitRoomCode(state.code)} />
+      </AuctionRoom>
+      <details className="auction-rules"><summary>게임 규칙·동점 추첨 순서</summary><p>가격 오차 ±{state.rules.tolerancePercent}% 이내 · 입찰 단위 {money(state.rules.bidStep)} · 심사 실패 비용 예산의 {state.rules.failurePercent}% · 납품 1건 이상이어야 우승 가능</p>
+        {state.lotteryOrder.length > 0 && <><strong>동일 입찰가·동일 가격 오차일 때의 추첨 순서</strong><p>{state.lotteryOrder.map(id => nameOf(state,id)).join(' → ')}</p></>}
+      </details>
       {state.history.length > 0 && <section className="card history"><h3>지난 라운드 기록</h3>{state.history.map(r => <details key={r.round}><summary>{r.round}R · {r.name} <span>{r.winnerId ? `${nameOf(state,r.winnerId)} 낙찰 · ${money(r.contract!)}` : '유찰'}</span></summary><ResultTable state={state} result={r} /></details>)}</section>}
     </>}<footer>나라장터 등록 상품 104종 · 2026-11-09 조회 계약단가 · 공고 기관·수량·예산은 게임용입니다.<br />실제 조달 계약을 진행하는 서비스가 아닙니다.</footer></main>;
 }
