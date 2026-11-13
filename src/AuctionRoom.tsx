@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Phase, PlayerView, RoomView } from '../shared/protocol';
 import { money } from './format';
+import { playGavel, useAuctionSound } from './auction-audio';
 
 const phaseNames: Record<Phase, string> = {
   lobby: '참가 준비', catalog: '카탈로그 열람', announcement: '입찰 공고', price: '가격 퀴즈',
@@ -69,7 +70,33 @@ function Character({ seat, host = false }: { seat: number; host?: boolean }) {
   return <div className={`auction-character character-${host ? 'host' : seat}`} aria-hidden="true">
     <div className="character-head"><span className="character-eyes" /><span className="character-mouth" /></div>
     <div className="character-body"><span className="character-arm" /></div>
+    {host && <div className="host-hammer-arm"><span className="gavel-hand" /><span className="gavel-handle" /><span className="gavel-head" /></div>}
   </div>;
+}
+
+function PriceFeedback({ state }: { state: RoomView }) {
+  if (state.me.eligible === null || state.unitPrice === null || state.phase === 'finished' || state.result?.winnerId) return null;
+  const { guess, eligible, priceSubmitted } = state.me;
+  const lower = Math.ceil(state.unitPrice * (100 - state.rules.tolerancePercent) / 100);
+  const upper = Math.floor(state.unitPrice * (100 + state.rules.tolerancePercent) / 100);
+  const skipped = guess === null;
+  return <section key={state.roundNumber} className={`price-feedback ${eligible ? 'is-success' : skipped ? 'is-skipped' : 'is-failure'}`} role="status" aria-label="가격 퀴즈 결과">
+    <span className="quiz-feedback-mark" aria-hidden="true">{eligible ? '✓' : skipped ? '—' : '×'}</span>
+    <div><strong>{eligible ? '가격 퀴즈 성공! 입찰 자격 획득' : skipped ? priceSubmitted ? '가격 퀴즈를 건너뛰었습니다' : '가격 답안을 제출하지 못했습니다' : '가격 퀴즈 실패 · 허용 오차를 벗어났어요'}</strong>
+      <p>{guess !== null && <>내 답 <b>{money(guess)}</b> · </>}정답 <b>{money(state.unitPrice)} / {state.tender?.unit}</b><span>허용 범위 {money(lower)} ~ {money(upper)}{guess !== null && ` · 내 오차 ${(Math.abs(guess - state.unitPrice) / state.unitPrice * 100).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%`}</span></p>
+    </div>
+  </section>;
+}
+
+function AwardBanner({ state, myId }: { state: RoomView; myId: string }) {
+  const result = state.result;
+  if (!result?.winnerId) return null;
+  const winner = state.players.find(p => p.id === result.winnerId)!;
+  return <section className="auction-award" aria-labelledby="auction-award-title" role="status">
+    <div className="award-seal" aria-hidden="true">낙찰<br />확정</div>
+    <div className="award-winner"><small>ROUND {state.roundNumber} · 계약 성사</small><h2 id="auction-award-title">{winner.nickname} 낙찰</h2><p>{winner.id === myId ? '내 업체가 계약을 따냈습니다!' : `${winner.nickname} 업체가 계약을 따냈습니다.`} 납품 실적 +1건</p></div>
+    <div className="award-money"><span>계약가 <b>{money(result.contract!)}</b></span><strong>수익 +{money(result.contract! - result.cost)}</strong></div>
+  </section>;
 }
 
 function playerBubble(state: RoomView, player: PlayerView, myId: string) {
@@ -131,18 +158,35 @@ function PlayerSeat({ player, state, myId }: { player: PlayerView; state: RoomVi
 
 export function AuctionRoom({ state, myId, lot, children }: { state: RoomView; myId: string; lot: ReactNode; children: ReactNode }) {
   const speech = announcement(state, myId);
-  return <section className="auction-room" aria-label="나라입찰 경매장">
+  const { soundEnabled, toggleSound, soundSupported } = useAuctionSound();
+  const previous = useRef<{ code: string; round: number; phase: Phase } | null>(null);
+  const [celebration, setCelebration] = useState<string | null>(null);
+  const awardId = state.result?.winnerId ? `${state.code}:${state.roundNumber}:${state.result.winnerId}` : null;
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { code: state.code, round: state.roundNumber, phase: state.phase };
+    // 같은 결과 재전송·새로고침·음소거 해제 때 타격음을 반복하지 않습니다.
+    if (awardId && before?.code === state.code && before.round === state.roundNumber && before.phase !== 'result') {
+      setCelebration(awardId);
+      return playGavel();
+    }
+    if (!awardId) setCelebration(null);
+  }, [state.code, state.roundNumber, state.phase, awardId]);
+  const striking = !!awardId && celebration === awardId;
+  return <section className={`auction-room ${awardId ? 'has-award' : ''} ${striking ? 'is-celebrating' : ''}`} aria-label="나라입찰 경매장">
     {state.roundNumber > 0 && state.phase !== 'finished' && <nav className="steps auction-steps" aria-label="현재 라운드 진행 단계">{steps.map((phase, i) => {
       const current = state.phase === phase || state.phase === 'reviewChoice' && phase === 'reviewAnswer';
       return <span key={phase} className={current ? 'current' : ''} aria-current={current ? 'step' : undefined}><i>{String(i + 1).padStart(2, '0')}</i>{phaseNames[phase]}</span>;
     })}</nav>}
+    <PriceFeedback state={state} />
+    <AwardBanner state={state} myId={myId} />
     <div className="auction-scene">
       <div className="auction-stage-top">
         {lot ?? <div className="auction-intro-board"><small>NARA AUCTION</small><h2>{state.phase === 'finished' ? '모든 입찰이 끝났습니다' : state.phase === 'catalog' ? '먼저 상품을 알아볼 시간' : '당신의 다음 계약을 기다립니다'}</h2><p>물품을 기억하고, 가격을 제시하고,<br />규격을 맞혀 계약을 따내세요.</p><span>초기 자금 3,000만 원 · 총 {state.totalRounds}라운드</span></div>}
         <div className="auction-host-area">
-          <div className="auction-host"><Character seat={0} host /><div className="auction-podium"><small>나라입찰</small><strong>입찰 진행자</strong></div></div>
+          <div className={`auction-host ${striking ? 'is-striking' : ''}`}><Character key={awardId ?? 'host'} seat={0} host /><div className="auction-podium"><span className="gavel-impact" aria-hidden="true">땅! 땅! 땅!</span><small>나라입찰</small><strong>입찰 진행자</strong></div></div>
           <section className="auction-host-speech" aria-label="진행자 안내" aria-live="polite" aria-atomic="true">
-            <small>{phaseNames[state.phase]}{state.activeId && ` · ${playerName(state, state.activeId)} 차례`}</small>
+            <div className="auction-host-caption"><small>{phaseNames[state.phase]}{state.activeId && ` · ${playerName(state, state.activeId)} 차례`}</small><button className="auction-sound-toggle" type="button" aria-label="효과음" aria-pressed={soundEnabled} disabled={!soundSupported} onClick={toggleSound}>{soundSupported ? `효과음 ${soundEnabled ? '켜짐' : '꺼짐'}` : '효과음 미지원'}</button></div>
             <p className="auction-host-line" key={state.phaseId}>{speech.line}</p><p className="auction-host-hint">{speech.hint}</p>
           </section>
         </div>

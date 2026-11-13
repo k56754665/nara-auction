@@ -133,6 +133,60 @@
 .auction-rules { padding: 14px 5px; color: #526775; font-size: 12px; }
 .auction-rules summary { cursor: pointer; }
 .auction-rules p { font-size: 12px; }
+.auction-host-caption { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 7px 10px; margin-bottom: 8px; }
+.auction-host-caption > small { color: var(--auction-green); font-size: 12px; letter-spacing: 0; }
+button.auction-sound-toggle { padding: 4px 8px; font-size: 11px; font-weight: 600; background: var(--auction-soft); color: var(--auction-green); border: 1px solid #c3dacd; border-radius: 6px; white-space: nowrap; }
+button.auction-sound-toggle[aria-pressed="false"] { color: var(--auction-muted); background: #f0f0eb; border-color: var(--auction-line); }
+.price-feedback { display: flex; align-items: center; gap: 12px; margin: 12px 24px 0; padding: 10px 14px; border: 1px solid #bad6c8; border-radius: 10px; background: #edf7ef; color: #215b42; animation: quiz-feedback-in .3s ease-out; }
+.price-feedback.is-failure { background: #fff0eb; border-color: #e4b5a7; color: #913d2d; }
+.price-feedback.is-skipped { background: #f1f1ed; border-color: #d5d6cf; color: #59636b; }
+.quiz-feedback-mark { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; border: 1px solid currentColor; border-radius: 50%; background: #ffffff70; font-size: 20px; line-height: 1; font-weight: 800; }
+.price-feedback > div { min-width: 0; }
+.price-feedback strong { display: block; font-size: 14px; }
+.price-feedback p { font-size: 12px; margin: 2px 0 0; overflow-wrap: anywhere; }
+.price-feedback p > span { margin-left: 12px; display: inline-block; }
+.auction-award { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 18px 24px 0; padding: 18px 24px; border: 2px solid #c38b1b; border-radius: 13px; background: #fff3cc; color: #533b15; box-shadow: inset 0 0 0 4px #fffaf0; animation: award-reveal .5s ease-out; }
+.award-seal { display: grid; place-content: center; flex: 0 0 68px; width: 68px; height: 68px; border-radius: 50%; border: 3px double #aa7010; background: #f5cf6f; font-size: 17px; font-weight: 800; line-height: 1.25; text-align: center; transform: rotate(-10deg); }
+.award-winner { flex: 1; min-width: 0; }
+.award-winner small { color: #7b5b22; font-size: 11px; }
+.award-winner h2 { font-size: clamp(25px, 3vw, 38px); line-height: 1.35; letter-spacing: -1px; margin: 2px 0 5px; overflow-wrap: anywhere; }
+.award-winner p { font-size: 13px; margin: 0; }
+.award-money { display: flex; flex-direction: column; gap: 3px; text-align: right; }
+.award-money > span { font-size: 13px; }
+.award-money > strong { font-size: 22px; color: #795013; }
+.has-award .auction-player:not(.is-winner) { opacity: .72; }
+.has-award .auction-player.is-winner { transform: translateY(-4px); }
+.has-award .auction-player.is-winner .bid-bubble { background: #fff3cc; border-color: #c38b1b; color: #67450e; box-shadow: 0 0 0 4px #eed18b55; }
+.has-award .auction-player.is-winner .bid-bubble::after { border-color: #c38b1b; }
+.has-award .auction-player.is-winner .auction-desk { background: #fffae8; border-color: #c38b1b; border-top-color: #c38b1b; }
+.has-award .auction-player.is-winner .auction-seat-status { color: #87570e; font-size: 12px; font-weight: 800; }
+.host-hammer-arm { position: absolute; left: 57px; top: 72px; width: 42px; height: 15px; border-radius: 10px; background: #364956; transform: rotate(-20deg); transform-origin: 5px 8px; z-index: 4; }
+.gavel-hand { position: absolute; right: -1px; top: 2px; width: 15px; height: 13px; border-radius: 50%; background: #e9bb99; z-index: 2; }
+.gavel-handle { position: absolute; width: 7px; height: 44px; right: 2px; bottom: 4px; border-radius: 3px; background: #a97842; box-shadow: inset -2px 0 #794d28; }
+.gavel-head { position: absolute; width: 32px; height: 17px; right: -10px; bottom: 39px; border-radius: 4px; background: #916037; border-left: 5px solid #bd925e; border-right: 5px solid #bd925e; box-shadow: 0 2px #694323; }
+.gavel-impact { position: absolute; top: -23px; right: 0; font-size: 12px; font-weight: 800; color: #865417; white-space: nowrap; opacity: 0; }
+.is-striking .host-hammer-arm { animation: gavel-strike 1.2s ease-in-out; }
+.is-striking .gavel-impact { animation: gavel-impact 1.2s linear; }
+.is-celebrating .auction-player.is-winner .auction-character { animation: winner-cheer .7s ease-out; }
+@keyframes gavel-strike { 0%, 29%, 57%, 100% { transform: rotate(-20deg); } 15%, 42%, 70% { transform: rotate(65deg); } 23%, 51%, 83% { transform: rotate(-35deg); } }
+@keyframes gavel-impact { 0%, 13%, 27%, 40%, 55%, 68%, 86%, 100% { opacity: 0; transform: scale(.85); } 15%, 42%, 70% { opacity: 1; transform: scale(1.12); } }
+@keyframes award-reveal { from { opacity: .35; transform: translateY(-7px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes quiz-feedback-in { from { opacity: .4; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes winner-cheer { 0%, 100% { translate: 0 0; } 35% { translate: 0 -10px; } 65% { translate: 0 -3px; } }
+@media (max-width: 600px) {
+  .auction-host-caption > small { font-size: 11px; }
+  button.auction-sound-toggle { font-size: 11px; min-height: 32px; }
+  .price-feedback { margin: 12px 13px 0; padding: 10px; gap: 8px; align-items: start; }
+  .price-feedback strong { font-size: 13px; }
+  .price-feedback p { font-size: 11px; }
+  .price-feedback p > span { display: block; margin-left: 0; }
+  .auction-award { margin: 13px 13px 0; padding: 15px 12px; gap: 12px; }
+  .award-seal { width: 48px; height: 48px; flex-basis: 48px; font-size: 13px; }
+  .award-winner h2 { font-size: 25px; }
+  .award-winner p { font-size: 12px; }
+  .award-money { flex-basis: 100%; text-align: left; padding-top: 8px; border-top: 1px solid #e1c789; }
+  .award-money > strong { font-size: 20px; }
+}
 @keyframes paddle-raise { 0% { transform: translateY(0) rotate(25deg); } 65% { transform: translateY(-47px) rotate(-18deg); } 100% { transform: translateY(-39px) rotate(-12deg); } }
 @keyframes bid-bubble-in { from { opacity: .45; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes host-speech-in { from { opacity: .4; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
